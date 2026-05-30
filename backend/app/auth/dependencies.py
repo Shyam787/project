@@ -2,13 +2,18 @@ from typing import Annotated
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import authentication_error, authorization_error
 from app.auth.jwks import JwksProvider
 from app.auth.jwt_validator import JwtValidator
 from app.auth.models import IdentityContext
 from app.core.config import Settings, get_settings
+from app.db.dependencies import get_session
+from app.db.schema import users
 from app.rbac.policies import Permission, has_permission
+from app.tenant.context import resolve_tenant_context
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -31,12 +36,33 @@ async def require_identity(
         HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
     ],
     validator: Annotated[JwtValidator, Depends(get_jwt_validator)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> IdentityContext:
     if credentials is None:
         raise authentication_error("Bearer token is required.")
     if credentials.scheme.lower() != "bearer":
         raise authentication_error("Bearer token is required.")
-    return await validator.validate(credentials.credentials)
+    identity = await validator.validate(credentials.credentials)
+    if identity.tenant.tenant_id != "__unresolved__":
+        return identity
+    row = (
+        await session.execute(
+            select(users.c.tenant_id).where(
+                (users.c.external_subject == identity.user_id)
+                | (users.c.id == identity.user_id)
+                | (users.c.email == (identity.email or ""))
+            )
+        )
+    ).first()
+    if row is None:
+        raise authentication_error("Token does not contain a tenant identity.")
+    return IdentityContext(
+        user_id=identity.user_id,
+        email=identity.email,
+        tenant=resolve_tenant_context(row.tenant_id),
+        roles=identity.roles,
+        permissions=identity.permissions,
+    )
 
 
 def require_permission(permission: Permission):

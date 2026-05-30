@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.auth.dependencies import require_identity, require_permission
 from app.auth.models import IdentityContext
@@ -14,14 +15,23 @@ from app.documents.service import (
     get_document_for_identity,
     list_documents_for_identity,
     permanently_delete_document,
+    preview_document_for_identity,
     repository_summary,
     restore_document,
     soft_delete_document,
+    update_document_metadata,
     upload_text_document,
 )
 from app.rbac.policies import Permission
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+class MetadataUpdateRequest(BaseModel):
+    classification: str
+    allowed_roles: list[str] | None = None
+    description: str = ""
+    tags: list[str] = []
 
 
 @router.post("/upload")
@@ -110,6 +120,50 @@ async def download_document(
     if not storage_path or not Path(storage_path).exists():
         raise HTTPException(status_code=404, detail="Stored file not found.")
     return FileResponse(path=storage_path, filename=doc["title"])
+
+
+@router.get("/{document_id}/preview")
+async def preview_document(
+    document_id: str,
+    session: SessionDep,
+    identity: Annotated[IdentityContext, Depends(require_identity)],
+) -> dict:
+    doc = await preview_document_for_identity(
+        session=session, identity=identity, document_id=document_id
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return {"success": True, "payload": doc, "metadata": {}, "error": None}
+
+
+@router.patch("/{document_id}/metadata")
+async def edit_metadata(
+    request: Request,
+    document_id: str,
+    body: MetadataUpdateRequest,
+    session: SessionDep,
+    identity: Annotated[IdentityContext, Depends(require_permission(Permission.DOCUMENT_DELETE))],
+) -> dict:
+    try:
+        payload = await update_document_metadata(
+            session=session,
+            identity=identity,
+            document_id=document_id,
+            classification=body.classification,
+            allowed_roles=body.allowed_roles,
+            description=body.description,
+            tags=body.tags,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "payload": payload,
+        "metadata": {"request_id": getattr(request.state, "request_id", "unknown")},
+        "error": None,
+    }
 
 
 @router.post("/{document_id}/archive")

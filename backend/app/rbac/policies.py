@@ -15,12 +15,10 @@ ROLE_PERMISSIONS: dict[str, set[Permission]] = {
     "tenant_admin": set(Permission),
     "manager": {
         Permission.DOCUMENT_READ,
-        Permission.DOCUMENT_UPLOAD,
         Permission.FEEDBACK_ACCESS,
     },
     "employee": {
         Permission.DOCUMENT_READ,
-        Permission.DOCUMENT_UPLOAD,
         Permission.FEEDBACK_ACCESS,
     },
     "viewer": {Permission.DOCUMENT_READ},

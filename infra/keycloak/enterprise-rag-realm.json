@@ -23,11 +23,11 @@
         {
           "name": "tenant_id",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
           "consentRequired": false,
           "config": {
+            "user.attribute": "tenant_id",
             "claim.name": "tenant_id",
-            "claim.value": "tenant-acme",
             "jsonType.label": "String",
             "access.token.claim": "true",
             "id.token.claim": "true"
@@ -48,11 +48,12 @@
   ],
   "users": [
     {
-      "username": "demo-admin",
+      "username": "admin@acme.com",
       "enabled": true,
-      "email": "demo-admin@local.invalid",
-      "firstName": "Demo",
+      "email": "admin@acme.com",
+      "firstName": "ACME",
       "lastName": "Admin",
+      "attributes": { "tenant_id": ["acme"] },
       "credentials": [
         {
           "type": "password",
@@ -63,11 +64,12 @@
       "realmRoles": ["tenant_admin", "manager", "employee", "viewer"]
     },
     {
-      "username": "demo-viewer",
+      "username": "viewer@acme.com",
       "enabled": true,
-      "email": "demo-viewer@local.invalid",
-      "firstName": "Demo",
+      "email": "viewer@acme.com",
+      "firstName": "ACME",
       "lastName": "Viewer",
+      "attributes": { "tenant_id": ["acme"] },
       "credentials": [
         {
           "type": "password",
@@ -76,6 +78,38 @@
         }
       ],
       "realmRoles": ["viewer"]
+    },
+    {
+      "username": "manager@acme.com",
+      "enabled": true,
+      "email": "manager@acme.com",
+      "firstName": "ACME",
+      "lastName": "Manager",
+      "attributes": { "tenant_id": ["acme"] },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "DemoManager123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["manager"]
+    },
+    {
+      "username": "employee@acme.com",
+      "enabled": true,
+      "email": "employee@acme.com",
+      "firstName": "ACME",
+      "lastName": "Employee",
+      "attributes": { "tenant_id": ["acme"] },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "DemoEmployee123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["employee"]
     }
   ]
 }

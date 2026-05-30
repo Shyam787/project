@@ -57,14 +57,15 @@ class JwtValidator:
 
         if not user_id:
             raise authentication_error("Token does not contain a user identity.")
-        if not tenant_id:
+        if not tenant_id and self._settings.auth_jwks_json:
             raise authentication_error("Token does not contain a tenant identity.")
         if not roles:
             raise authentication_error("Token does not contain RBAC roles.")
 
         return IdentityContext(
             user_id=user_id,
-            tenant=resolve_tenant_context(tenant_id),
+            email=claims.get("email") or claims.get("preferred_username"),
+            tenant=resolve_tenant_context(tenant_id or "__unresolved__"),
             roles=roles,
             permissions=permissions_for_roles(roles),
         )

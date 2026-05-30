@@ -9,6 +9,7 @@ class Citation(BaseModel):
     document_id: str
     tenant_id: str
     source_location: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
     retrieval_score: float
     rerank_score: float | None
 
@@ -35,6 +36,7 @@ def assemble_retrieval_context(
                 document_id=candidate.document_id,
                 tenant_id=candidate.tenant_id,
                 source_location=candidate.metadata.get("source_location", {}),
+                metadata=candidate.metadata,
                 retrieval_score=candidate.retrieval_score,
                 rerank_score=candidate.rerank_score,
             )

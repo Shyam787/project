@@ -16,6 +16,7 @@ from app.core.metrics import MetricsMiddleware
 from app.db.bootstrap import create_schema
 from app.db.session import create_engine, create_session_factory
 from app.documents.router import router as documents_router
+from app.platform.router import router as platform_router
 from app.retrieval.qdrant_store import QdrantVectorStore
 
 
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix=resolved_settings.api_v1_prefix)
     app.include_router(documents_router, prefix=resolved_settings.api_v1_prefix)
     app.include_router(chat_router, prefix=resolved_settings.api_v1_prefix)
+    app.include_router(platform_router, prefix=resolved_settings.api_v1_prefix)
     app.include_router(health_router)
     app.add_exception_handler(HTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)

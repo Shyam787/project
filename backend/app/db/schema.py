@@ -56,6 +56,18 @@ roles = Table(
     Index("ix_roles_tenant_id", "tenant_id"),
 )
 
+user_roles = Table(
+    "user_roles",
+    metadata,
+    Column("id", ID_TYPE, primary_key=True),
+    Column("tenant_id", ID_TYPE, ForeignKey("tenants.id"), nullable=False),
+    Column("user_id", ID_TYPE, ForeignKey("users.id"), nullable=False),
+    Column("role_id", ID_TYPE, ForeignKey("roles.id"), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("tenant_id", "user_id", "role_id", name="uq_user_roles_scope"),
+    Index("ix_user_roles_tenant_user", "tenant_id", "user_id"),
+)
+
 documents = Table(
     "documents",
     metadata,
@@ -189,4 +201,6 @@ hallucination_results = Table(
     Index("ix_hallucination_results_tenant_message", "tenant_id", "message_id"),
 )
 
-CORE_TABLE_NAMES = tuple(table.name for table in metadata.sorted_tables)
+CORE_TABLE_NAMES = tuple(
+    table.name for table in metadata.sorted_tables if table.name != "user_roles"
+)

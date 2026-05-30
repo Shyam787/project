@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     qdrant_port: int = 6333
 
     keycloak_realm: str = "enterprise-rag"
+    keycloak_base_url: str = "http://keycloak:8080"
+    keycloak_admin_username: str = "admin"
+    keycloak_admin_password: str = Field(default="", repr=False)
     keycloak_issuer_url: str = "http://keycloak:8080/realms/enterprise-rag"
     keycloak_audience: str = "enterprise-rag-api"
     keycloak_jwks_url: str = (
@@ -46,7 +49,7 @@ class Settings(BaseSettings):
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.1-8b-instant"
     local_auto_migrate: bool = True
-    storage_root: str = "storage/uploads"
+    storage_root: str = "storage/tenants"
 
     @computed_field
     @property

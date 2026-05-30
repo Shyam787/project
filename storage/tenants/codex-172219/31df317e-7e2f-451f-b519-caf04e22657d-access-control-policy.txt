@@ -1,0 +1,7 @@
+Access Control Policy
+Classification: Internal
+Effective Date: 2026-01-01
+
+Passwords must contain minimum 14 characters, one uppercase letter, one lowercase letter, one number, and one special character.
+VPN access is required for remote employees.
+Access reviews are conducted every 90 days by Information Security.

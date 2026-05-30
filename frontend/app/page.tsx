@@ -32,14 +32,14 @@ export default function LandingPage() {
     <main className="min-h-screen bg-[#f7f8fb]">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/" className="text-lg font-semibold tracking-tight">ACME Knowledge AI</Link>
+          <Link href="/" className="text-lg font-semibold tracking-tight">Enterprise RAG</Link>
           <nav className="hidden items-center gap-6 text-sm text-slate-600 md:flex">
             <a href="#how">How it works</a>
             <a href="#security">Security</a>
             <a href="#outcomes">Outcomes</a>
           </nav>
-          <Link className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white" href="/organization">
-            Enter Workspace
+          <Link className="rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white" href="/signup">
+            Create Organization
           </Link>
         </div>
       </header>
@@ -48,20 +48,19 @@ export default function LandingPage() {
         <div>
           <Badge tone="accent">Security-first enterprise RAG</Badge>
           <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-5xl">
-            AI knowledge answers for enterprise teams, governed by access control.
+            Secure Enterprise RAG Platform
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">
-            Upload company policies, assign document visibility by role, and let employees ask questions only against the files they are authorized to retrieve.
+            Create a private organization, invite users, govern document access by role, and generate grounded answers only from authorized enterprise knowledge.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-700 px-5 py-3 text-sm font-semibold text-white" href="/organization">
-              Start Demo Workspace <ArrowRight className="h-4 w-4" />
+            <Link className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-700 px-5 py-3 text-sm font-semibold text-white" href="/signup">
+              Create Organization <ArrowRight className="h-4 w-4" />
             </Link>
-            <a className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-5 py-3 text-sm font-medium" href="#how">
-              See how retrieval is governed
-            </a>
+            <Link className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-5 py-3 text-sm font-medium" href="/login">Sign In</Link>
+            <Link className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-5 py-3 text-sm font-medium" href="/demo">Try Demo Workspace</Link>
           </div>
-          <div className="mt-6 text-sm text-slate-500">Local-first demo. Keycloak identity. Postgres metadata. Qdrant retrieval.</div>
+          <div className="mt-6 text-sm text-slate-500">Multi-tenant SaaS. Keycloak identity. Postgres metadata. Qdrant retrieval.</div>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -97,7 +96,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="mt-6 grid gap-3 md:grid-cols-4">
-            {["Keycloak login", "Tenant + role resolve", "RBAC document filter", "Hybrid retrieval + citations"].map((step, index) => (
+            {["Create organization", "Create users", "Upload documents", "Ask grounded questions"].map((step, index) => (
               <div key={step} className="rounded-lg border border-slate-200 p-4">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-50 text-sm font-semibold text-teal-800">{index + 1}</div>
                 <div className="mt-4 font-medium">{step}</div>

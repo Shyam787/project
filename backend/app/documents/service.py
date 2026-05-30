@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from docx import Document
 from pypdf import PdfReader
 
+from app.audit.service import record_audit_event
 from app.auth.models import IdentityContext
 from app.core.config import Settings
 from app.db.schema import chunks, document_permissions, documents, roles, tenants, users
@@ -26,6 +27,7 @@ SUPPORTED_TEXT_TYPES = {
 }
 CLASSIFICATIONS = {"Public", "Internal", "Confidential", "Restricted"}
 ACTIVE_STATUSES = {"completed", "processing", "pending", "failed"}
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 async def ensure_identity_records(
@@ -78,15 +80,20 @@ async def upload_text_document(
     classification: str,
     settings: Settings,
 ) -> dict:
+    if len(raw_bytes) > MAX_UPLOAD_BYTES:
+        raise ValueError("Uploaded file exceeds the 25 MB limit.")
     if content_type not in SUPPORTED_TEXT_TYPES and not filename.endswith((".txt", ".md", ".pdf", ".docx")):
         raise ValueError("Only PDF, DOCX, TXT, and Markdown uploads are currently supported.")
-    text = extract_document_text(
-        filename=filename,
-        content_type=content_type,
-        raw_bytes=raw_bytes,
-    )
+    try:
+        text = extract_document_text(
+            filename=filename,
+            content_type=content_type,
+            raw_bytes=raw_bytes,
+        )
+    except Exception as exc:
+        raise ValueError("Unable to extract content from uploaded file.") from exc
     if not text.strip():
-        raise ValueError("Uploaded document is empty.")
+        raise ValueError("No extractable content found.")
     if classification not in CLASSIFICATIONS:
         raise ValueError("Unsupported document classification.")
 
@@ -95,6 +102,18 @@ async def upload_text_document(
         identity=identity,
         extra_roles=allowed_roles,
     )
+    duplicate = (
+        await session.execute(
+            select(documents.c.id).where(
+                documents.c.tenant_id == identity.tenant.tenant_id,
+                documents.c.title == filename,
+            )
+        )
+    ).first()
+    if duplicate:
+        raise ValueError(
+            "A document with this filename already exists. Rename the file or remove the existing document before uploading again."
+        )
     document_id = str(uuid4())
     stored_path = store_uploaded_file(
         storage_root=settings.storage_root,
@@ -169,6 +188,15 @@ async def upload_text_document(
         .where(documents.c.id == document_id)
         .values(ingestion_status="completed")
     )
+    await record_audit_event(
+        session=session,
+        tenant_id=identity.tenant.tenant_id,
+        user_id=identity.user_id,
+        event_type="Document Uploaded",
+        resource_type="document",
+        resource_id=document_id,
+        metadata={"filename": filename, "classification": classification},
+    )
     return {
         "document_id": document_id,
         "title": filename,
@@ -234,6 +262,7 @@ async def list_documents_for_identity(
             "uploaded_by": (row.metadata or {}).get("uploaded_by", row.owner_id),
             "classification": (row.metadata or {}).get("classification", "Internal"),
             "allowed_roles": (row.metadata or {}).get("allowed_roles", []),
+            "can_edit": "tenant_admin" in identity.roles,
             "chunk_count": int(row.chunk_count or 0),
             "storage_path": (row.metadata or {}).get("storage_path", ""),
             "created_at": row.created_at.isoformat(),
@@ -264,6 +293,109 @@ async def get_document_for_identity(
     return next((doc for doc in docs if doc["document_id"] == document_id), None)
 
 
+async def preview_document_for_identity(
+    *, session: AsyncSession, identity: IdentityContext, document_id: str
+) -> dict | None:
+    doc = await get_document_for_identity(
+        session=session, identity=identity, document_id=document_id
+    )
+    if doc is None:
+        return None
+    rows = (
+        await session.execute(
+            select(chunks.c.content, chunks.c.chunk_index)
+            .where(
+                chunks.c.document_id == document_id,
+                chunks.c.tenant_id == identity.tenant.tenant_id,
+            )
+            .order_by(chunks.c.chunk_index.asc())
+            .limit(3)
+        )
+    ).all()
+    return {
+        **doc,
+        "preview": "\n\n".join(row.content for row in rows),
+    }
+
+
+async def update_document_metadata(
+    *,
+    session: AsyncSession,
+    identity: IdentityContext,
+    document_id: str,
+    classification: str,
+    allowed_roles: list[str] | None,
+    description: str,
+    tags: list[str],
+) -> dict:
+    row = (
+        await session.execute(
+            select(documents.c.owner_id, documents.c.metadata).where(
+                documents.c.id == document_id,
+                documents.c.tenant_id == identity.tenant.tenant_id,
+            )
+        )
+    ).mappings().first()
+    if row is None:
+        raise ValueError("Document not found.")
+    if "tenant_admin" not in identity.roles:
+        raise PermissionError("Only tenant administrators can edit document access.")
+    if classification not in CLASSIFICATIONS:
+        raise ValueError("Unsupported document classification.")
+    metadata = dict(row["metadata"] or {})
+    metadata.update(
+        {
+            "classification": classification,
+            "description": description,
+            "tags": [tag.strip() for tag in tags if tag.strip()],
+        }
+    )
+    if allowed_roles is not None:
+        role_set = {role.strip() for role in allowed_roles if role.strip()}
+        if not role_set:
+            raise ValueError("At least one role must be allowed to retrieve the document.")
+        await ensure_identity_records(
+            session=session,
+            identity=identity,
+            extra_roles=role_set,
+        )
+        role_rows = (
+            await session.execute(
+                select(roles.c.id, roles.c.name).where(
+                    roles.c.tenant_id == identity.tenant.tenant_id,
+                    roles.c.name.in_(role_set),
+                )
+            )
+        ).all()
+        matched_roles = {role_name for _role_id, role_name in role_rows}
+        missing_roles = role_set - matched_roles
+        if missing_roles:
+            raise ValueError(f"Unknown role assignment: {', '.join(sorted(missing_roles))}.")
+        metadata["allowed_roles"] = sorted(role_set)
+        await session.execute(
+            delete(document_permissions)
+            .where(document_permissions.c.document_id == document_id)
+            .where(document_permissions.c.tenant_id == identity.tenant.tenant_id)
+        )
+        for role_id, _role_name in role_rows:
+            await session.execute(
+                insert(document_permissions).values(
+                    id=str(uuid4()),
+                    tenant_id=identity.tenant.tenant_id,
+                    document_id=document_id,
+                    role_id=role_id,
+                    permission="document_read",
+                )
+            )
+    await session.execute(
+        update(documents)
+        .where(documents.c.id == document_id)
+        .where(documents.c.tenant_id == identity.tenant.tenant_id)
+        .values(metadata=metadata)
+    )
+    return {"document_id": document_id, "metadata": metadata}
+
+
 async def archive_document(
     *, session: AsyncSession, identity: IdentityContext, document_id: str
 ) -> dict:
@@ -278,6 +410,14 @@ async def archive_document(
         .where(documents.c.id == document_id)
         .where(documents.c.tenant_id == identity.tenant.tenant_id)
         .values(ingestion_status="archived", metadata=metadata)
+    )
+    await record_audit_event(
+        session=session,
+        tenant_id=identity.tenant.tenant_id,
+        user_id=identity.user_id,
+        event_type="Document Archived",
+        resource_type="document",
+        resource_id=document_id,
     )
     return {"document_id": document_id, "state": "Archived"}
 
@@ -297,6 +437,14 @@ async def restore_document(
         .where(documents.c.tenant_id == identity.tenant.tenant_id)
         .values(ingestion_status="completed", metadata=metadata)
     )
+    await record_audit_event(
+        session=session,
+        tenant_id=identity.tenant.tenant_id,
+        user_id=identity.user_id,
+        event_type="Document Restored",
+        resource_type="document",
+        resource_id=document_id,
+    )
     return {"document_id": document_id, "state": "Active"}
 
 
@@ -314,6 +462,15 @@ async def soft_delete_document(
         .where(documents.c.id == document_id)
         .where(documents.c.tenant_id == identity.tenant.tenant_id)
         .values(ingestion_status="soft_deleted", metadata=metadata)
+    )
+    await record_audit_event(
+        session=session,
+        tenant_id=identity.tenant.tenant_id,
+        user_id=identity.user_id,
+        event_type="Document Deleted",
+        resource_type="document",
+        resource_id=document_id,
+        metadata={"delete_type": "soft"},
     )
     return {"document_id": document_id, "state": "Deleted"}
 
@@ -349,6 +506,15 @@ async def permanently_delete_document(
     )
     if storage_path:
         Path(storage_path).unlink(missing_ok=True)
+    await record_audit_event(
+        session=session,
+        tenant_id=identity.tenant.tenant_id,
+        user_id=identity.user_id,
+        event_type="Document Deleted",
+        resource_type="document",
+        resource_id=document_id,
+        metadata={"delete_type": "hard"},
+    )
     return {"document_id": document_id, "state": "Permanently Deleted", "deleted": True}
 
 
@@ -361,6 +527,7 @@ async def require_manageable_document(
         await session.execute(
             select(
                 documents.c.id,
+                documents.c.owner_id,
                 documents.c.storage_uri,
                 documents.c.metadata,
             ).where(
@@ -432,6 +599,7 @@ async def authorized_chunks_for_identity(
             chunks.c.content,
             chunks.c.chunk_index,
             chunks.c.metadata,
+            documents.c.metadata.label("document_metadata"),
         )
         .select_from(
             chunks.join(
@@ -457,7 +625,10 @@ async def authorized_chunks_for_identity(
             tenant_id=row.tenant_id,
             chunk_text=row.content,
             chunk_index=row.chunk_index,
-            metadata=row.metadata or {},
+            metadata={
+                **(row.metadata or {}),
+                "document": row.document_metadata or {},
+            },
         )
         for row in rows
     ]

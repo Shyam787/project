@@ -1,0 +1,7 @@
+Data Classification Policy
+Classification: Internal
+Effective Date: 2026-05-01
+
+Public data may be shared externally.
+Internal data is restricted to employees and approved contractors.
+Restricted data requires tenant administrator approval before export.

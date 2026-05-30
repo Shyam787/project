@@ -3,6 +3,7 @@
 export type SessionClaims = {
   subject: string;
   tenant: string;
+  email: string;
   roles: string[];
 };
 
@@ -21,6 +22,7 @@ export function readClaims(token: string): SessionClaims | null {
     ];
     return {
       subject: claims.preferred_username ?? claims.sub ?? "authenticated-user",
+      email: claims.email ?? claims.preferred_username ?? "",
       tenant: claims.tenant_id ?? "unknown-tenant",
       roles: Array.from(new Set(roles)).sort()
     };
