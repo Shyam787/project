@@ -1,0 +1,157 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: enterprise-rag-backend
+    environment:
+      APP_NAME: ${APP_NAME:-enterprise-rag}
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-enterprise-rag}
+      KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL:-http://localhost:8081/realms/enterprise-rag}
+      KEYCLOAK_JWKS_URL: ${KEYCLOAK_JWKS_URL:-http://keycloak:8080/realms/enterprise-rag/protocol/openid-connect/certs}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_AUDIENCE:-enterprise-rag-api}
+      GROQ_API_KEY: ${GROQ_API_KEY:-replace-with-local-groq-api-key}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      STORAGE_ROOT: /app/storage/uploads
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage/uploads:/app/storage/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    networks:
+      - enterprise-rag-internal
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: enterprise-rag-frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      INTERNAL_API_BASE_URL: http://backend:8000
+    ports:
+      - "3002:3000"
+    depends_on:
+      - backend
+    networks:
+      - enterprise-rag-internal
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: enterprise-rag-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - enterprise-rag-internal
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.7
+    container_name: enterprise-rag-qdrant
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - enterprise-rag-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: enterprise-rag-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - enterprise-rag-internal
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: enterprise-rag-keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?KEYCLOAK_ADMIN is required}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_HOSTNAME_URL: http://localhost:8081
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./infra/keycloak/enterprise-rag-realm.json:/opt/keycloak/data/import/enterprise-rag-realm.json:ro
+    networks:
+      - enterprise-rag-internal
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: enterprise-rag-prometheus
+    ports: 
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - backend
+    networks:
+      - enterprise-rag-internal
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: enterprise-rag-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER is required}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - enterprise-rag-internal
+
+networks:
+  enterprise-rag-internal:
+    name: enterprise-rag-internal
+    driver: bridge
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: enterprise-rag-redis
+  namespace: database
+spec:
+  serviceName: enterprise-rag-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-rag-redis
+  template:
+    metadata:
+      labels:
+        app: enterprise-rag-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-rag-redis
+  namespace: database
+spec:
+  type: ClusterIP
+  selector:
+    app: enterprise-rag-redis
+  ports:
+    - port: 6379
+      targetPort: 6379

@@ -1,0 +1,46 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "tenant-a",
+      "documents": [
+        {
+          "document_id": "doc-access",
+          "title": "Access Control Policy",
+          "roles": ["viewer"],
+          "text": "The access control policy requires annual access review and retrieval-time permission validation."
+        },
+        {
+          "document_id": "doc-payroll",
+          "title": "Payroll Restricted Memo",
+          "roles": ["tenant_admin"],
+          "text": "Payroll exports contain sensitive compensation details and require audit approval."
+        }
+      ]
+    },
+    {
+      "tenant_id": "tenant-b",
+      "documents": [
+        {
+          "document_id": "doc-access-b",
+          "title": "Other Tenant Access Policy",
+          "roles": ["viewer"],
+          "text": "Tenant B uses quarterly badge review and separate security procedures."
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "query": "What review does the access policy require?",
+      "tenant_id": "tenant-a",
+      "role": "viewer",
+      "expected_documents": ["doc-access"]
+    },
+    {
+      "query": "Show payroll export details",
+      "tenant_id": "tenant-a",
+      "role": "viewer",
+      "expected_documents": []
+    }
+  ]
+}

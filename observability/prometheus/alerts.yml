@@ -1,0 +1,42 @@
+groups:
+  - name: enterprise-rag-alerts
+    rules:
+      - alert: HighApiErrorRate
+        expr: |
+          sum(rate(enterprise_rag_api_requests_total{status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(enterprise_rag_api_requests_total[5m])), 1)
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: High backend API error rate
+
+      - alert: RbacDenialSpike
+        expr: sum(rate(enterprise_rag_rbac_denials_total[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: RBAC denial spike detected
+
+      - alert: TenantIsolationViolation
+        expr: sum(rate(enterprise_rag_tenant_violation_attempts_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Tenant isolation violation attempt detected
+
+      - alert: HallucinationScoreSpike
+        expr: |
+          sum(rate(enterprise_rag_hallucination_score_sum[10m]))
+          /
+          clamp_min(sum(rate(enterprise_rag_hallucination_score_count[10m])), 1)
+          > 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Average hallucination score exceeded threshold

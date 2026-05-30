@@ -1,0 +1,11 @@
+ACME CORPORATION - UPLOAD VERIFICATION POLICY
+
+Document Classification: Internal
+
+The Secure Upload Desk owns document ingestion verification.
+
+Nimbus reference files must be retained for 180 days.
+
+Employees must attach the Upload Control ID before submitting regulated files.
+
+If no approved evidence is available, the knowledge assistant must answer with insufficient evidence instead of guessing.

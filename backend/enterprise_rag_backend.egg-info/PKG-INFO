@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: enterprise-rag-backend
+Version: 0.1.0
+Summary: Enterprise RAG backend modular monolith
+Requires-Python: >=3.11
+Requires-Dist: fastapi<1.0,>=0.111
+Requires-Dist: uvicorn[standard]<1.0,>=0.30
+Requires-Dist: pydantic-settings<3.0,>=2.3
+Requires-Dist: structlog<25.0,>=24.2
+Requires-Dist: prometheus-client<1.0,>=0.20
+Requires-Dist: PyJWT[crypto]<3.0,>=2.8
+Requires-Dist: httpx<1.0,>=0.27
+Requires-Dist: SQLAlchemy<3.0,>=2.0
+Requires-Dist: asyncpg<1.0,>=0.29
+Requires-Dist: redis<6.0,>=5.0
+Requires-Dist: rank-bm25<1.0,>=0.2.2
+Requires-Dist: qdrant-client<2.0,>=1.9
+Requires-Dist: python-multipart<1.0,>=0.0.12
+Requires-Dist: pypdf<6.0,>=5.1
+Requires-Dist: python-docx<2.0,>=1.1
+Provides-Extra: test
+Requires-Dist: httpx<1.0,>=0.27; extra == "test"
+Requires-Dist: pytest<9.0,>=8.2; extra == "test"

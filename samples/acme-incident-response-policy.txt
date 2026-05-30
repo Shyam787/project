@@ -1,0 +1,9 @@
+ACME CORPORATION - INCIDENT RESPONSE POLICY
+
+Security incidents must be reported to the Information Security team within 30 minutes of discovery.
+
+Critical incidents require executive notification within 4 hours.
+
+Incident evidence must be preserved in the approved case management system.
+
+Document Classification: Internal

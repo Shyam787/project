@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: enterprise-rag-postgres
+  namespace: database
+spec:
+  serviceName: enterprise-rag-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-rag-postgres
+  template:
+    metadata:
+      labels:
+        app: enterprise-rag-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: enterprise-rag-secrets
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-rag-postgres
+  namespace: database
+spec:
+  type: ClusterIP
+  selector:
+    app: enterprise-rag-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

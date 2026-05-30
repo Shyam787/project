@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-rag-grafana
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enterprise-rag-grafana
+  template:
+    metadata:
+      labels:
+        app: enterprise-rag-grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.1.0
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: enterprise-rag-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: enterprise-rag-grafana
+  namespace: observability
+spec:
+  type: ClusterIP
+  selector:
+    app: enterprise-rag-grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

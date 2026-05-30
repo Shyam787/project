@@ -1,0 +1,51 @@
+{
+  "title": "Enterprise RAG Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {
+      "title": "API Requests",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(enterprise_rag_api_requests_total[5m])) by (status_code)"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+    },
+    {
+      "title": "Pipeline Latency",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(enterprise_rag_stage_latency_seconds_bucket[5m])) by (le, stage))"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
+    },
+    {
+      "title": "Security Events",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(enterprise_rag_rbac_denials_total[5m])) by (tenant_id)"
+        },
+        {
+          "expr": "sum(rate(enterprise_rag_tenant_violation_attempts_total[5m])) by (tenant_id)"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "title": "Hallucination Score",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(enterprise_rag_hallucination_score_sum[10m])) by (tenant_id) / clamp_min(sum(rate(enterprise_rag_hallucination_score_count[10m])) by (tenant_id), 1)"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+    }
+  ]
+}

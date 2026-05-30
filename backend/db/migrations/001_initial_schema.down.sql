@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS hallucination_results;
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS feedback;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS chunks;
+DROP TABLE IF EXISTS document_permissions;
+DROP TABLE IF EXISTS documents;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS tenants;
