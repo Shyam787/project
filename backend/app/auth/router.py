@@ -17,6 +17,8 @@ async def current_user(
         "success": True,
         "payload": {
             "user_id": identity.user_id,
+            "display_name": identity.full_name,
+            "email": identity.email,
             "tenant_id": identity.tenant.tenant_id,
             "tenant_namespace": identity.tenant.namespace,
             "roles": sorted(identity.roles),

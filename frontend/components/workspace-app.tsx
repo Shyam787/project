@@ -11,6 +11,9 @@ import {
   LockKeyhole,
   LogOut,
   MessageSquareText,
+  Eye,
+  EyeOff,
+  Plus,
   RefreshCw,
   RotateCcw,
   Search,
@@ -54,6 +57,9 @@ type ChatResult = {
 
 type EventRow = { time: string; action: string; result: string; detail: string };
 type Toast = { id: number; tone: "success" | "error" | "info"; message: string };
+type UserRecord = { user_id: string; email: string; full_name: string; roles: string[]; is_active: boolean; created_at: string };
+type UserFormState = { full_name: string; email: string; password: string; confirm_password: string; role: string; is_active: boolean };
+type UserEditState = { full_name: string; role: string; is_active: boolean; password?: string };
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const roleOptions = ["viewer", "employee", "manager", "tenant_admin"];
@@ -73,15 +79,17 @@ export function WorkspaceApp() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [users, setUsers] = useState<UserRecord[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
 
   const admin = isTenantAdmin(claims);
   const canUpload = admin;
   const primaryRole = admin ? "tenant_admin" : claims?.roles[0] ?? "viewer";
-  const nav = admin ? ["home", "documents", "ask", "settings"] : ["home", "documents", "ask"];
+  const nav = admin ? ["home", "documents", "ask", "users", "settings"] : ["home", "documents", "ask"];
 
   useEffect(() => {
     const stored = getStoredToken();
@@ -94,6 +102,7 @@ export function WorkspaceApp() {
     setClaims(parsed);
     hydrateClaims(stored, parsed);
     loadDocuments(stored);
+    loadUsers(stored);
     loadActivity(stored);
   }, [router]);
 
@@ -153,7 +162,8 @@ export function WorkspaceApp() {
     if (response.ok) {
       setClaims({
         subject: fallback.subject,
-        email: fallback.email,
+        email: body.payload.email ?? fallback.email,
+        fullName: body.payload.display_name ?? fallback.fullName,
         tenant: body.payload.tenant_id,
         roles: body.payload.roles
       });
@@ -171,6 +181,18 @@ export function WorkspaceApp() {
         result: event.resource_type ?? "workspace",
         detail: event.resource_id ?? ""
       })));
+    }
+  }
+
+  async function loadUsers(authToken = token) {
+    if (!authToken) return;
+    setUsersLoading(true);
+    try {
+      const response = await fetch(`${apiBase}/api/v1/users`, { headers: { Authorization: `Bearer ${authToken}` } });
+      const body = await response.json();
+      if (response.ok) setUsers(body.payload.users);
+    } finally {
+      setUsersLoading(false);
     }
   }
 
@@ -305,6 +327,74 @@ export function WorkspaceApp() {
     setAllowedRoles((roles) => roles.includes(role) ? roles.filter((item) => item !== role) : [...roles, role]);
   }
 
+  async function createUser(payload: UserFormState) {
+    const response = await api("/api/v1/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      notify(body.error?.message ?? body.detail ?? "User creation failed.", "error");
+      return false;
+    }
+    notify(`${payload.full_name} was created.`, "success");
+    await loadUsers();
+    await loadActivity();
+    return true;
+  }
+
+  async function updateUser(userId: string, payload: UserEditState) {
+    const response = await api(`/api/v1/users/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      notify(body.error?.message ?? body.detail ?? "User update failed.", "error");
+      return false;
+    }
+    notify("User profile updated.", "success");
+    await loadUsers();
+    await loadActivity();
+    return true;
+  }
+
+  async function deleteUser(user: UserRecord, confirmationPassword: string) {
+    const response = await api(`/api/v1/users/${user.user_id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation_password: confirmationPassword })
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      notify(body.error?.message ?? body.detail ?? "User deletion failed.", "error");
+      return false;
+    }
+    notify(`${user.full_name} was deleted.`, "success");
+    await loadUsers();
+    await loadActivity();
+    return true;
+  }
+
+  async function deleteOrganization(confirmationPassword: string) {
+    const response = await api("/api/v1/organizations/current", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation_password: confirmationPassword })
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      notify(body.error?.message ?? body.detail ?? "Organization deletion failed.", "error");
+      return false;
+    }
+    notify("Organization deleted.", "success");
+    clearSession();
+    router.replace("/");
+    return true;
+  }
+
   if (!claims) return <main className="min-h-screen bg-slate-50 p-6 text-sm">Loading secure workspace...</main>;
 
   return (
@@ -330,7 +420,8 @@ export function WorkspaceApp() {
       <div className="mx-auto grid max-w-7xl gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[230px_1fr]">
         <aside className="rounded-lg border border-slate-200 bg-white p-3 lg:sticky lg:top-4 lg:h-fit">
           <div className="mb-3 rounded-md bg-slate-50 p-3 text-sm">
-            <div className="font-medium">{claims.subject}</div>
+            <div className="font-medium">{claims.fullName || claims.subject}</div>
+            <div className="mt-1 text-xs text-slate-500">{claims.email}</div>
             <div className="mt-1 text-xs text-slate-500">{primaryRole}</div>
           </div>
           <nav className="grid gap-1">
@@ -345,6 +436,7 @@ export function WorkspaceApp() {
         <section className="space-y-4">
           {active === "home" && <Dashboard summary={summary} claims={claims} />}
           {active === "ask" && <AskView query={query} setQuery={setQuery} ask={ask} chat={chat} clearChat={() => setChat(null)} />}
+          {active === "users" && admin && <UsersView users={users} tenant={claims.tenant} createUser={createUser} updateUser={updateUser} deleteUser={deleteUser} reload={() => loadUsers()} loading={usersLoading} />}
           {active === "documents" && (
             <DocumentsView
               admin={admin}
@@ -371,7 +463,7 @@ export function WorkspaceApp() {
               reload={() => loadDocuments()}
             />
           )}
-          {active === "settings" && admin && <AdminView claims={claims} summary={summary} documents={documents} events={events} />}
+          {active === "settings" && admin && <AdminView claims={claims} summary={summary} documents={documents} events={events} deleteOrganization={deleteOrganization} />}
         </section>
       </div>
       <ToastStack toasts={toasts} dismiss={(id) => setToasts((current) => current.filter((toast) => toast.id !== id))} />
@@ -405,7 +497,7 @@ function Dashboard({ summary, claims }: { summary: { documents: number; chunks: 
         </div>
       </Card>
       <Card title="Current access scope">
-        <div className="text-sm text-slate-600">Signed in as <b>{claims.subject}</b> with roles <b>{claims.roles.join(", ")}</b>.</div>
+        <div className="text-sm text-slate-600">Signed in as <b>{claims.fullName || claims.subject}</b> using <b>{claims.email}</b> with roles <b>{claims.roles.join(", ")}</b>.</div>
       </Card>
     </div>
   );
@@ -585,9 +677,109 @@ function ActivityView({ events }: { events: EventRow[] }) {
   return <Card title="Workspace activity">{events.length ? events.map((event) => <div key={`${event.time}-${event.action}`} className="border-b border-slate-100 py-3 text-sm"><b>{event.action}</b> - {event.result}<div className="text-xs text-slate-500">{event.time} - {event.detail}</div></div>) : <p className="text-sm text-slate-500">Activity appears here after uploads, queries, and lifecycle actions.</p>}</Card>;
 }
 
-function AdminView({ claims, summary, documents, events }: { claims: SessionClaims; summary: { documents: number; chunks: number; restricted: number; archived: number }; documents: DocumentRecord[]; events: EventRow[] }) {
+function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, loading }: { users: UserRecord[]; tenant: string; createUser: (payload: UserFormState) => Promise<boolean>; updateUser: (userId: string, payload: UserEditState) => Promise<boolean>; deleteUser: (user: UserRecord, confirmationPassword: string) => Promise<boolean>; reload: () => void; loading: boolean }) {
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<UserRecord | null>(null);
+  const [deleting, setDeleting] = useState<UserRecord | null>(null);
+
   return (
     <div className="space-y-4">
+      <Card title="Organization users">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-600">Create users, assign their role, and control whether they can sign in.</p>
+          <div className="flex gap-2">
+            <button disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-70" onClick={reload} type="button"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> {loading ? "Refreshing..." : "Refresh"}</button>
+            <button className="inline-flex items-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)} type="button"><Plus className="h-4 w-4" /> Create user</button>
+          </div>
+        </div>
+        <div className="grid gap-3">
+          {loading && (
+            <div className="grid gap-3">
+              {[0, 1, 2].map((item) => <div key={item} className="h-20 animate-pulse rounded-lg bg-slate-100" />)}
+            </div>
+          )}
+          {users.map((user) => (
+            <div className="rounded-lg border border-slate-200 p-3" key={user.user_id}>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="font-medium">{user.full_name}</div>
+                  <div className="mt-1 text-xs text-slate-500">{user.email}</div>
+                  <div className="mt-2 flex flex-wrap gap-2"><Badge tone="accent">{user.roles[0] ?? "viewer"}</Badge><Badge tone={user.is_active ? "success" : "danger"}>{user.is_active ? "Active" : "Inactive"}</Badge></div>
+                </div>
+                <div className="flex gap-2">
+                  <IconButton title="Edit user" onClick={() => setEditing(user)}><Edit3 className="h-4 w-4" /></IconButton>
+                  <IconButton title="Delete user" onClick={() => setDeleting(user)} danger><Trash2 className="h-4 w-4" /></IconButton>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!users.length && <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No users found for this organization.</div>}
+        </div>
+      </Card>
+      {creating && <UserFormModal title="Create user" onClose={() => setCreating(false)} onSubmit={async (payload) => { if (await createUser(payload)) setCreating(false); }} />}
+      {editing && <UserEditModal user={editing} onClose={() => setEditing(null)} onSubmit={async (payload) => { if (await updateUser(editing.user_id, payload)) setEditing(null); }} />}
+      {deleting && <DangerConfirmModal title="Delete user permanently" message={`Deleting ${deleting.full_name} removes the user from this organization and identity provider. This cannot be restored.`} expected={`${tenant}-admin`} onClose={() => setDeleting(null)} onConfirm={async (password) => { if (await deleteUser(deleting, password)) setDeleting(null); }} />}
+    </div>
+  );
+}
+
+function UserFormModal({ title, onClose, onSubmit }: { title: string; onClose: () => void; onSubmit: (payload: UserFormState) => Promise<void> }) {
+  const [form, setForm] = useState<UserFormState>({ full_name: "", email: "", password: "", confirm_password: "", role: "viewer", is_active: true });
+  const [showPassword, setShowPassword] = useState(false);
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form className="grid gap-3" onSubmit={async (event) => { event.preventDefault(); await onSubmit(form); }}>
+        <input required className="rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Full name" value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
+        <input required className="rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Login email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex rounded-md border border-slate-300 bg-white">
+            <input required className="min-w-0 flex-1 rounded-md px-3 py-2 text-sm outline-none" placeholder="Password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <button className="px-3 text-slate-500" title={showPassword ? "Hide password" : "Show password"} type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+          </div>
+          <input required className="rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="Confirm password" type={showPassword ? "text" : "password"} value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select>
+          <label className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm"><input checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} type="checkbox" /> Active user</label>
+        </div>
+        <div className="text-xs text-slate-500">Password must be 12+ characters with uppercase, lowercase, number, and special character.</div>
+        <button className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Save user</button>
+      </form>
+    </Modal>
+  );
+}
+
+function UserEditModal({ user, onClose, onSubmit }: { user: UserRecord; onClose: () => void; onSubmit: (payload: UserEditState) => Promise<void> }) {
+  const [form, setForm] = useState<UserEditState>({ full_name: user.full_name, role: user.roles[0] ?? "viewer", is_active: user.is_active, password: "" });
+  return (
+    <Modal title="Edit user" onClose={onClose}>
+      <form className="grid gap-3" onSubmit={async (event) => { event.preventDefault(); await onSubmit({ ...form, password: form.password || undefined }); }}>
+        <div className="text-sm text-slate-500">{user.email}</div>
+        <input required className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <select className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })}>{roleOptions.map((role) => <option key={role}>{role}</option>)}</select>
+          <label className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm"><input checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} type="checkbox" /> Active user</label>
+        </div>
+        <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="New password (optional)" type="password" value={form.password ?? ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+        <button className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Save changes</button>
+      </form>
+    </Modal>
+  );
+}
+
+function AdminView({ claims, summary, documents, events, deleteOrganization }: { claims: SessionClaims; summary: { documents: number; chunks: number; restricted: number; archived: number }; documents: DocumentRecord[]; events: EventRow[]; deleteOrganization: (confirmationPassword: string) => Promise<boolean> }) {
+  const [deletingOrg, setDeletingOrg] = useState(false);
+  return (
+    <div className="space-y-4">
+      <Card title="Danger zone">
+        <div className="flex flex-col gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="font-semibold">Delete this organization</div>
+            <div className="mt-1">Permanently removes users, documents, local files, database records, and identity-provider accounts.</div>
+          </div>
+          <button className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700" onClick={() => setDeletingOrg(true)} type="button">Delete organization</button>
+        </div>
+      </Card>
       <Card title="Organization administration">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border border-slate-200 p-3 text-sm">Tenant: {claims.tenant}</div>
@@ -598,7 +790,26 @@ function AdminView({ claims, summary, documents, events }: { claims: SessionClai
       <Card title="Governance report">
         <pre className="overflow-auto rounded-md bg-slate-50 p-3 text-xs">{JSON.stringify({ tenant: claims.tenant, summary, documents: documents.map(({ title, classification, allowed_roles, state }) => ({ title, classification, allowed_roles, state })) }, null, 2)}</pre>
       </Card>
+      {deletingOrg && <DangerConfirmModal title="Delete organization permanently" message="This deletes the organization, users, documents, local files, database records, and identity-provider users. This cannot be restored." expected={`${claims.tenant}-admin`} onClose={() => setDeletingOrg(false)} onConfirm={async (password) => { if (await deleteOrganization(password)) setDeletingOrg(false); }} />}
     </div>
+  );
+}
+
+function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4"><section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl"><div className="mb-4 flex items-center justify-between"><h2 className="text-base font-semibold">{title}</h2><button onClick={onClose} type="button"><X className="h-5 w-5" /></button></div>{children}</section></div>;
+}
+
+function DangerConfirmModal({ title, message, expected, onClose, onConfirm }: { title: string; message: string; expected: string; onClose: () => void; onConfirm: (password: string) => Promise<void> }) {
+  const [value, setValue] = useState("");
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="space-y-3">
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{message}</div>
+        <label className="block text-sm font-medium">Type <span className="font-mono">{expected}</span> to confirm</label>
+        <input className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={value} onChange={(event) => setValue(event.target.value)} />
+        <button className="rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={value !== expected} onClick={() => onConfirm(value)} type="button">Confirm permanent deletion</button>
+      </div>
+    </Modal>
   );
 }
 

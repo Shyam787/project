@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.exceptions import authentication_error, authorization_error
@@ -44,10 +45,31 @@ async def require_identity(
         raise authentication_error("Bearer token is required.")
     identity = await validator.validate(credentials.credentials)
     if identity.tenant.tenant_id != "__unresolved__":
+        try:
+            row = (
+                await session.execute(
+                    select(users.c.is_active, users.c.display_name).where(
+                        users.c.tenant_id == identity.tenant.tenant_id,
+                        (
+                            (users.c.external_subject == identity.user_id)
+                            | (users.c.id == identity.user_id)
+                            | (users.c.email == (identity.email or ""))
+                        ),
+                    )
+                )
+            ).first()
+            if row is not None and not row.is_active:
+                raise authentication_error("Your account is inactive. Contact your organization administrator to regain access.")
+            if row is not None:
+                identity.full_name = row.display_name
+        except HTTPException:
+            raise
+        except (SQLAlchemyError, OSError):
+            pass
         return identity
     row = (
         await session.execute(
-            select(users.c.tenant_id).where(
+            select(users.c.tenant_id, users.c.is_active, users.c.display_name).where(
                 (users.c.external_subject == identity.user_id)
                 | (users.c.id == identity.user_id)
                 | (users.c.email == (identity.email or ""))
@@ -56,9 +78,12 @@ async def require_identity(
     ).first()
     if row is None:
         raise authentication_error("Token does not contain a tenant identity.")
+    if not row.is_active:
+        raise authentication_error("Your account is inactive. Contact your organization administrator to regain access.")
     return IdentityContext(
         user_id=identity.user_id,
         email=identity.email,
+        full_name=row.display_name,
         tenant=resolve_tenant_context(row.tenant_id),
         roles=identity.roles,
         permissions=identity.permissions,

@@ -4,11 +4,13 @@ export type SessionClaims = {
   subject: string;
   tenant: string;
   email: string;
+  fullName?: string;
   roles: string[];
 };
 
 export const TOKEN_KEY = "enterprise_rag_token";
 export const USER_KEY = "enterprise_rag_user";
+const governedRoles = new Set(["tenant_admin", "manager", "employee", "viewer"]);
 
 export function readClaims(token: string): SessionClaims | null {
   try {
@@ -23,8 +25,9 @@ export function readClaims(token: string): SessionClaims | null {
     return {
       subject: claims.preferred_username ?? claims.sub ?? "authenticated-user",
       email: claims.email ?? claims.preferred_username ?? "",
+      fullName: claims.name ?? ([claims.given_name, claims.family_name].filter(Boolean).join(" ") || undefined),
       tenant: claims.tenant_id ?? "unknown-tenant",
-      roles: Array.from(new Set(roles)).sort()
+      roles: Array.from(new Set(roles.filter((role) => governedRoles.has(role)))).sort()
     };
   } catch {
     return null;

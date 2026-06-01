@@ -17,6 +17,8 @@ This organization is seed data for evaluator demonstrations only. Production flo
 | employee@acme.com | employee | DemoEmployee123! |
 | viewer@acme.com | viewer | DemoViewer123! |
 
+| admin@abcd.com | tenant_admin | DemoAdmin123! |
+
 ## Login Instructions
 
 1. Open http://localhost:3002/login.

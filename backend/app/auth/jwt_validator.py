@@ -9,7 +9,7 @@ from app.auth.exceptions import authentication_error
 from app.auth.jwks import JwksProvider
 from app.auth.models import IdentityContext
 from app.core.config import Settings
-from app.rbac.policies import permissions_for_roles
+from app.rbac.policies import GOVERNED_TENANT_ROLES, permissions_for_roles
 from app.tenant.context import resolve_tenant_context
 
 
@@ -76,4 +76,4 @@ class JwtValidator:
         resource_access = claims.get("resource_access", {})
         audience_access = resource_access.get(self._settings.keycloak_audience, {})
         roles.update(audience_access.get("roles", []))
-        return roles
+        return roles.intersection(GOVERNED_TENANT_ROLES)

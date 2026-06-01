@@ -24,6 +24,8 @@ ROLE_PERMISSIONS: dict[str, set[Permission]] = {
     "viewer": {Permission.DOCUMENT_READ},
 }
 
+GOVERNED_TENANT_ROLES = {"tenant_admin", "manager", "employee", "viewer"}
+
 
 def permissions_for_roles(roles: set[str]) -> set[Permission]:
     permissions: set[Permission] = set()

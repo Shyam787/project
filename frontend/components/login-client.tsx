@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui";
 import { readClaims, storeToken } from "@/components/auth";
 
 const keycloakBase = process.env.NEXT_PUBLIC_KEYCLOAK_BASE_URL ?? "http://localhost:8081";
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export function LoginClient() {
   const router = useRouter();
@@ -36,8 +37,27 @@ export function LoginClient() {
     const body = await response.json();
     setLoading(false);
     if (!response.ok) {
+      const details = String(body.error_description ?? body.error ?? "").toLowerCase();
       setStatusTone("error");
-      setStatus("Incorrect username or password. Please verify your credentials and try again.");
+      if (details.includes("disabled") || details.includes("inactive")) {
+        setStatus("Your account is inactive. Contact your organization administrator to regain access.");
+      } else if (details.includes("not fully set up")) {
+        setStatus("Your account exists but is not fully set up. Ask your organization administrator to save your profile or reset your password.");
+      } else {
+        try {
+          const lookup = await fetch(`${apiBase}/api/v1/users/login-status?email=${encodeURIComponent(username)}`);
+          const lookupBody = await lookup.json();
+          if (lookup.ok && lookupBody.payload?.exists && lookupBody.payload?.is_active) {
+            setStatus("The password is incorrect for this user. Ask your organization administrator to reset it if needed.");
+          } else if (lookup.ok && lookupBody.payload?.exists && !lookupBody.payload?.is_active) {
+            setStatus("Your account is inactive. Contact your organization administrator to regain access.");
+          } else {
+            setStatus("No account was found for this email address. Use the login email created by your organization admin.");
+          }
+        } catch {
+          setStatus("Unable to verify this sign-in. Check the email address and password, then try again.");
+        }
+      }
       return;
     }
     storeToken(body.access_token);
@@ -55,7 +75,7 @@ export function LoginClient() {
           <Badge tone="accent">Secure Workspace</Badge>
           <h1 className="mt-4 text-3xl font-semibold tracking-normal">Sign in to your knowledge workspace</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">
-            Use the email and password provided by your organization administrator to access your secure document workspace.
+            Use the email address and password provided by your organization administrator to access your secure document workspace.
           </p>
           <div className="mt-5 rounded-lg border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900">
             <div className="font-semibold">Need access?</div>
@@ -66,7 +86,7 @@ export function LoginClient() {
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <form className="space-y-3" onSubmit={login}>
             <label className="block text-sm font-medium">Email</label>
-            <input className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" type="email" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="admin@company.com" required />
+            <input className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" type="email" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="name@company.com" required />
             <label className="block text-sm font-medium">Password</label>
             <div className="flex gap-2">
               <input className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} />
