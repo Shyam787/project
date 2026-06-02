@@ -148,7 +148,12 @@ class KeycloakAdminClient:
                 headers=headers,
             )
             existing.raise_for_status()
-            removable = [role for role in existing.json() if role.get("name") in {"tenant_admin", "manager", "employee", "viewer"}]
+            removable = [
+                role
+                for role in existing.json()
+                if role.get("name")
+                in {"tenant_admin", "manager", "employee", "hr", "finance", "security", "viewer"}
+            ]
             if removable:
                 remove = await client.request(
                     "DELETE",

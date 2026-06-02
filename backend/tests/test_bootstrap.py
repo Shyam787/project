@@ -21,7 +21,7 @@ def _security_test_client(claim_overrides: dict | None = None) -> tuple[TestClie
     claims = {
         "sub": "user-1",
         "tenant_id": "tenant-a",
-        "roles": ["viewer"],
+        "roles": ["employee"],
         "iss": issuer,
         "aud": audience,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -89,8 +89,8 @@ def test_auth_me_returns_tenant_and_rbac_context():
     assert body["payload"]["user_id"] == "user-1"
     assert body["payload"]["tenant_id"] == "tenant-a"
     assert body["payload"]["tenant_namespace"] == "tenant_tenant-a"
-    assert body["payload"]["roles"] == ["viewer"]
-    assert body["payload"]["permissions"] == ["document_read"]
+    assert body["payload"]["roles"] == ["employee"]
+    assert body["payload"]["permissions"] == ["document_read", "feedback_access"]
     assert body["metadata"]["request_id"] == "auth-test"
 
 

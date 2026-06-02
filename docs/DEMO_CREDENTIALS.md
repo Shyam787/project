@@ -15,9 +15,11 @@ This organization is seed data for evaluator demonstrations only. Production flo
 | admin@acme.com | tenant_admin | DemoAdmin123! |
 | manager@acme.com | manager | DemoManager123! |
 | employee@acme.com | employee | DemoEmployee123! |
-| viewer@acme.com | viewer | DemoViewer123! |
+| hr@acme.com | hr | DemoHr123! |
+| finance@acme.com | finance | DemoFinance123! |
+| security@acme.com | security | DemoSecurity123! |
 
-| admin@abcd.com | tenant_admin | DemoAdmin123! |
+| admin@test.com | tenant_admin | DemoAdmin123! |
 
 ## Login Instructions
 

@@ -45,7 +45,7 @@ def test_cache_keys_include_tenant_and_rbac_scope():
     identity = IdentityContext(
         user_id="user-1",
         tenant=resolve_tenant_context("tenant-a"),
-        roles={"viewer"},
+        roles={"employee"},
         permissions={Permission.DOCUMENT_READ},
     )
 

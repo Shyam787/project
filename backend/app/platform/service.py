@@ -14,7 +14,7 @@ from app.db.schema import audit_logs, chunks, conversations, document_permission
 from app.platform.keycloak_admin import KeycloakAdminClient
 from app.retrieval.qdrant_store import QdrantVectorStore
 
-DEFAULT_ROLES = {"tenant_admin", "manager", "employee", "viewer"}
+DEFAULT_ROLES = {"tenant_admin", "manager", "employee", "hr", "finance", "security"}
 ORG_ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
 
 

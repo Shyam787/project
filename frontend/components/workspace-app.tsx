@@ -62,7 +62,7 @@ type UserFormState = { full_name: string; email: string; password: string; confi
 type UserEditState = { full_name: string; role: string; is_active: boolean; password?: string };
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const roleOptions = ["viewer", "employee", "manager", "tenant_admin"];
+const roleOptions = ["employee", "manager", "hr", "finance", "security", "tenant_admin"];
 const classificationOptions = ["Public", "Internal", "Confidential", "Restricted"];
 
 export function WorkspaceApp() {
@@ -72,7 +72,7 @@ export function WorkspaceApp() {
   const [active, setActive] = useState("home");
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [file, setFile] = useState<File | null>(null);
-  const [allowedRoles, setAllowedRoles] = useState(["viewer", "tenant_admin"]);
+  const [allowedRoles, setAllowedRoles] = useState(["employee", "tenant_admin"]);
   const [classification, setClassification] = useState("Internal");
   const [query, setQuery] = useState("");
   const [chat, setChat] = useState<ChatResult | null>(null);
@@ -88,7 +88,7 @@ export function WorkspaceApp() {
 
   const admin = isTenantAdmin(claims);
   const canUpload = admin;
-  const primaryRole = admin ? "tenant_admin" : claims?.roles[0] ?? "viewer";
+  const primaryRole = admin ? "tenant_admin" : claims?.roles[0] ?? "employee";
   const nav = admin ? ["home", "documents", "ask", "users", "settings"] : ["home", "documents", "ask"];
 
   useEffect(() => {
@@ -118,7 +118,7 @@ export function WorkspaceApp() {
   const summary = useMemo(() => ({
     documents: documents.length,
     chunks: documents.reduce((sum, document) => sum + document.chunk_count, 0),
-    restricted: documents.filter((document) => !document.allowed_roles.includes("viewer")).length,
+    restricted: documents.filter((document) => !document.allowed_roles.includes("employee")).length,
     archived: documents.filter((document) => document.state === "Archived").length
   }), [documents]);
 
@@ -486,7 +486,7 @@ function Dashboard({ summary, claims }: { summary: { documents: number; chunks: 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <Metric icon={<FileText />} label="Authorized documents" value={summary.documents} />
           <Metric icon={<BarChart3 />} label="Searchable chunks" value={summary.chunks} />
-          <Metric icon={<LockKeyhole />} label="Your role" value={claims.roles[0] ?? "viewer"} />
+          <Metric icon={<LockKeyhole />} label="Your role" value={claims.roles[0] ?? "employee"} />
         </div>
       )}
       <Card title="What this workspace does">
@@ -704,7 +704,7 @@ function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, 
                 <div>
                   <div className="font-medium">{user.full_name}</div>
                   <div className="mt-1 text-xs text-slate-500">{user.email}</div>
-                  <div className="mt-2 flex flex-wrap gap-2"><Badge tone="accent">{user.roles[0] ?? "viewer"}</Badge><Badge tone={user.is_active ? "success" : "danger"}>{user.is_active ? "Active" : "Inactive"}</Badge></div>
+                  <div className="mt-2 flex flex-wrap gap-2"><Badge tone="accent">{user.roles[0] ?? "employee"}</Badge><Badge tone={user.is_active ? "success" : "danger"}>{user.is_active ? "Active" : "Inactive"}</Badge></div>
                 </div>
                 <div className="flex gap-2">
                   <IconButton title="Edit user" onClick={() => setEditing(user)}><Edit3 className="h-4 w-4" /></IconButton>
@@ -724,7 +724,7 @@ function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, 
 }
 
 function UserFormModal({ title, onClose, onSubmit }: { title: string; onClose: () => void; onSubmit: (payload: UserFormState) => Promise<void> }) {
-  const [form, setForm] = useState<UserFormState>({ full_name: "", email: "", password: "", confirm_password: "", role: "viewer", is_active: true });
+  const [form, setForm] = useState<UserFormState>({ full_name: "", email: "", password: "", confirm_password: "", role: "employee", is_active: true });
   const [showPassword, setShowPassword] = useState(false);
   return (
     <Modal title={title} onClose={onClose}>
@@ -750,7 +750,7 @@ function UserFormModal({ title, onClose, onSubmit }: { title: string; onClose: (
 }
 
 function UserEditModal({ user, onClose, onSubmit }: { user: UserRecord; onClose: () => void; onSubmit: (payload: UserEditState) => Promise<void> }) {
-  const [form, setForm] = useState<UserEditState>({ full_name: user.full_name, role: user.roles[0] ?? "viewer", is_active: user.is_active, password: "" });
+  const [form, setForm] = useState<UserEditState>({ full_name: user.full_name, role: user.roles[0] ?? "employee", is_active: user.is_active, password: "" });
   return (
     <Modal title="Edit user" onClose={onClose}>
       <form className="grid gap-3" onSubmit={async (event) => { event.preventDefault(); await onSubmit({ ...form, password: form.password || undefined }); }}>

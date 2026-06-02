@@ -44,7 +44,7 @@ async def upload_document(
         Depends(require_permission(Permission.DOCUMENT_UPLOAD)),
     ],
     file: UploadFile = File(...),
-    allowed_roles: str = Form("viewer,employee,manager,tenant_admin"),
+    allowed_roles: str = Form("employee,manager,hr,finance,security,tenant_admin"),
     classification: str = Form("Internal"),
     pii_sensitive: bool = Form(False),
 ) -> dict:

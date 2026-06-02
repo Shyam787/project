@@ -6,7 +6,9 @@
       { "name": "tenant_admin" },
       { "name": "manager" },
       { "name": "employee" },
-      { "name": "viewer" }
+      { "name": "hr" },
+      { "name": "finance" },
+      { "name": "security" }
     ]
   },
   "clients": [
@@ -61,23 +63,23 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["tenant_admin", "manager", "employee", "viewer"]
+      "realmRoles": ["tenant_admin"]
     },
     {
-      "username": "viewer@acme.com",
+      "username": "hr@acme.com",
       "enabled": true,
-      "email": "viewer@acme.com",
+      "email": "hr@acme.com",
       "firstName": "ACME",
-      "lastName": "Viewer",
+      "lastName": "HR",
       "attributes": { "tenant_id": ["acme"] },
       "credentials": [
         {
           "type": "password",
-          "value": "DemoViewer123!",
+          "value": "DemoHr123!",
           "temporary": false
         }
       ],
-      "realmRoles": ["viewer"]
+      "realmRoles": ["hr"]
     },
     {
       "username": "manager@acme.com",
@@ -110,6 +112,38 @@
         }
       ],
       "realmRoles": ["employee"]
+    },
+    {
+      "username": "finance@acme.com",
+      "enabled": true,
+      "email": "finance@acme.com",
+      "firstName": "ACME",
+      "lastName": "Finance",
+      "attributes": { "tenant_id": ["acme"] },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "DemoFinance123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["finance"]
+    },
+    {
+      "username": "security@acme.com",
+      "enabled": true,
+      "email": "security@acme.com",
+      "firstName": "ACME",
+      "lastName": "Security",
+      "attributes": { "tenant_id": ["acme"] },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "DemoSecurity123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["security"]
     }
   ]
 }

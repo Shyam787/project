@@ -10,7 +10,7 @@ export type SessionClaims = {
 
 export const TOKEN_KEY = "enterprise_rag_token";
 export const USER_KEY = "enterprise_rag_user";
-const governedRoles = new Set(["tenant_admin", "manager", "employee", "viewer"]);
+const governedRoles = new Set(["tenant_admin", "manager", "employee", "hr", "finance", "security"]);
 
 export function readClaims(token: string): SessionClaims | null {
   try {

@@ -36,7 +36,7 @@ def test_query_processing_normalizes_and_builds_authorized_scope():
     identity = IdentityContext(
         user_id="user-1",
         tenant=resolve_tenant_context("tenant-a"),
-        roles={"viewer"},
+        roles={"employee"},
         permissions={Permission.DOCUMENT_READ},
     )
 

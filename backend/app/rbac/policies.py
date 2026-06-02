@@ -21,10 +21,28 @@ ROLE_PERMISSIONS: dict[str, set[Permission]] = {
         Permission.DOCUMENT_READ,
         Permission.FEEDBACK_ACCESS,
     },
-    "viewer": {Permission.DOCUMENT_READ},
+    "hr": {
+        Permission.DOCUMENT_READ,
+        Permission.FEEDBACK_ACCESS,
+    },
+    "finance": {
+        Permission.DOCUMENT_READ,
+        Permission.FEEDBACK_ACCESS,
+    },
+    "security": {
+        Permission.DOCUMENT_READ,
+        Permission.FEEDBACK_ACCESS,
+    },
 }
 
-GOVERNED_TENANT_ROLES = {"tenant_admin", "manager", "employee", "viewer"}
+GOVERNED_TENANT_ROLES = {
+    "tenant_admin",
+    "manager",
+    "employee",
+    "hr",
+    "finance",
+    "security",
+}
 
 
 def permissions_for_roles(roles: set[str]) -> set[Permission]:

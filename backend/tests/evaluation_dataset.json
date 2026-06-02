@@ -6,7 +6,7 @@
         {
           "document_id": "doc-access",
           "title": "Access Control Policy",
-          "roles": ["viewer"],
+          "roles": ["employee"],
           "text": "The access control policy requires annual access review and retrieval-time permission validation."
         },
         {
@@ -23,7 +23,7 @@
         {
           "document_id": "doc-access-b",
           "title": "Other Tenant Access Policy",
-          "roles": ["viewer"],
+          "roles": ["employee"],
           "text": "Tenant B uses quarterly badge review and separate security procedures."
         }
       ]
@@ -33,13 +33,13 @@
     {
       "query": "What review does the access policy require?",
       "tenant_id": "tenant-a",
-      "role": "viewer",
+      "role": "employee",
       "expected_documents": ["doc-access"]
     },
     {
       "query": "Show payroll export details",
       "tenant_id": "tenant-a",
-      "role": "viewer",
+      "role": "employee",
       "expected_documents": []
     }
   ]

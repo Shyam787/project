@@ -51,7 +51,7 @@ def test_rbac_and_tenant_retrieval_validation_from_dataset():
                     chunk_index=index,
                 )
             )
-            if tenant["tenant_id"] == "tenant-a" and "viewer" in document["roles"]:
+            if tenant["tenant_id"] == "tenant-a" and "employee" in document["roles"]:
                 allowed_docs.add(document["document_id"])
 
     scope = AuthorizedRetrievalScope(
@@ -102,12 +102,12 @@ async def test_rbac_before_rerank_validation_blocks_restricted_candidate():
 
 def test_cache_validation_separates_tenant_and_rbac_context():
     tenant_a_key = tenant_cache_key(
-        identity=_identity("tenant-a", "viewer"),
+        identity=_identity("tenant-a", "employee"),
         category="query_response",
         parts={"query": "access policy"},
     )
     tenant_b_key = tenant_cache_key(
-        identity=_identity("tenant-b", "viewer"),
+        identity=_identity("tenant-b", "employee"),
         category="query_response",
         parts={"query": "access policy"},
     )

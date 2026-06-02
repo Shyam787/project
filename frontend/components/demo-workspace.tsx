@@ -6,9 +6,11 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 
 const demoRoles = [
-  { id: "viewer", label: "Viewer", detail: "General policies" },
   { id: "employee", label: "Employee", detail: "Internal knowledge" },
   { id: "manager", label: "Manager", detail: "Team governance" },
+  { id: "hr", label: "HR", detail: "People policies" },
+  { id: "finance", label: "Finance", detail: "Payroll and spend" },
+  { id: "security", label: "Security", detail: "Access and risk" },
   { id: "tenant_admin", label: "Admin", detail: "Restricted access" }
 ];
 
@@ -16,7 +18,7 @@ const demoDocs = [
   {
     filename: "Access Control Policy",
     classification: "Internal",
-    roles: ["viewer", "employee", "manager", "tenant_admin"],
+    roles: ["employee", "manager", "hr", "finance", "security", "tenant_admin"],
     lines: [
       "Passwords must contain minimum 14 characters, one uppercase letter, one lowercase letter, one number, and one special character.",
       "VPN access is required for remote employees.",
@@ -27,7 +29,7 @@ const demoDocs = [
   {
     filename: "Payroll Approval Policy",
     classification: "Restricted",
-    roles: ["tenant_admin"],
+    roles: ["finance", "tenant_admin"],
     lines: [
       "Only tenant administrators may approve payroll exports.",
       "Payroll reports are retained for seven years.",
@@ -37,7 +39,7 @@ const demoDocs = [
   {
     filename: "Contractor Policy",
     classification: "Confidential",
-    roles: ["manager", "tenant_admin"],
+    roles: ["manager", "security", "tenant_admin"],
     lines: [
       "Contractors may only access systems approved by their department manager.",
       "Contractor access must be reviewed every 30 days.",
@@ -49,8 +51,8 @@ const demoDocs = [
 type DemoResult = { answer: string; citations: Array<{ id: string; filename: string; classification: string }> };
 
 export function DemoWorkspace() {
-  const [role, setRole] = useState("viewer");
-  const [query, setQuery] = useState("1. Who gets VPN access? 2. What are password requirements? 3. Who can approve payroll exports? 4. who approves the contractors to access systems?");
+  const [role, setRole] = useState("employee");
+  const [query, setQuery] = useState("1. What are password requirements? 2. Who can approve payroll exports? 3. Who approves contractors to access systems?");
   const [result, setResult] = useState<DemoResult | null>(null);
   const accessible = useMemo(() => demoDocs.filter((doc) => doc.roles.includes(role)), [role]);
 
