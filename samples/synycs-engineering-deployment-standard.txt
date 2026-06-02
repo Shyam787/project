@@ -1,4 +1,4 @@
-ACME CORPORATION - ENGINEERING DEPLOYMENT STANDARD
+SYNYCS GROUP - ENGINEERING DEPLOYMENT STANDARD
 
 Production deployments require peer review, passing CI checks, and rollback documentation.
 

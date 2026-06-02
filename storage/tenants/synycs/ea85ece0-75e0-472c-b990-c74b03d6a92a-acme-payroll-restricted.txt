@@ -1,2 +1,0 @@
-Payroll export approval requires tenant administrator review.
-Compensation data must not be visible to general employee role users.

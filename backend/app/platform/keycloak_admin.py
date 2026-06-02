@@ -152,7 +152,7 @@ class KeycloakAdminClient:
                 role
                 for role in existing.json()
                 if role.get("name")
-                in {"tenant_admin", "manager", "employee", "hr", "finance", "security", "viewer"}
+                in {"tenant_admin", "manager", "employee", "hr", "finance", "security"}
             ]
             if removable:
                 remove = await client.request(

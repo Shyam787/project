@@ -1,4 +1,4 @@
-ACME CORPORATION - INCIDENT RESPONSE POLICY
+SYNYCS GROUP - INCIDENT RESPONSE POLICY
 
 Security incidents must be reported to the Information Security team within 30 minutes of discovery.
 

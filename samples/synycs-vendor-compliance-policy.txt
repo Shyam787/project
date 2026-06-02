@@ -1,4 +1,4 @@
-ACME CORPORATION - VENDOR COMPLIANCE POLICY
+SYNYCS GROUP - VENDOR COMPLIANCE POLICY
 
 Vendors handling customer data must complete an annual security questionnaire.
 

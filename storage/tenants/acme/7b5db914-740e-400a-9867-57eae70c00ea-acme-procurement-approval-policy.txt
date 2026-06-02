@@ -1,9 +1,0 @@
-ACME CORPORATION - PROCUREMENT APPROVAL POLICY
-
-Purchases above 5,000 USD require department manager approval.
-
-Purchases above 25,000 USD require finance review and tenant administrator approval.
-
-Emergency procurement must be documented within 2 business days.
-
-Document Classification: Confidential

@@ -10,18 +10,18 @@ async def create_schema(engine: AsyncEngine) -> None:
         await connection.run_sync(metadata.create_all)
         await connection.execute(
             insert(tenants)
-            .values(id="acme", name="ACME Corporation", slug="acme")
+            .values(id="synycs", name="Synycs Group", slug="synycs")
             .on_conflict_do_nothing(index_elements=["id"])
         )
         role_ids: dict[str, str] = {}
         for role_name in ("tenant_admin", "manager", "employee", "hr", "finance", "security"):
-            role_id = f"seed-acme-{role_name}"
+            role_id = f"seed-synycs-{role_name}"
             role_ids[role_name] = role_id
             await connection.execute(
                 insert(roles)
                 .values(
                     id=role_id,
-                    tenant_id="acme",
+                    tenant_id="synycs",
                     name=role_name,
                     description=f"{role_name} seed role",
                 )
@@ -30,7 +30,7 @@ async def create_schema(engine: AsyncEngine) -> None:
             row = (
                 await connection.execute(
                     select(roles.c.id).where(
-                        roles.c.tenant_id == "acme",
+                        roles.c.tenant_id == "synycs",
                         roles.c.name == role_name,
                     )
                 )
@@ -38,18 +38,18 @@ async def create_schema(engine: AsyncEngine) -> None:
             if row is not None:
                 role_ids[role_name] = row.id
         for email, role_name, display_name in (
-            ("admin@acme.com", "tenant_admin", "ACME Admin"),
-            ("manager@acme.com", "manager", "ACME Manager"),
-            ("employee@acme.com", "employee", "ACME Employee"),
-            ("hr@acme.com", "hr", "ACME HR"),
-            ("finance@acme.com", "finance", "ACME Finance"),
-            ("security@acme.com", "security", "ACME Security"),
+            ("admin@synycs.com", "tenant_admin", "Synycs Admin"),
+            ("manager@synycs.com", "manager", "Synycs Manager"),
+            ("employee@synycs.com", "employee", "Synycs Employee"),
+            ("shyam@synycs.com", "hr", "Shyam HR"),
+            ("malli@synycs.com", "finance", "Mallikarjun Finance"),
+            ("esh@synycs.com", "security", "Esh Security"),
         ):
             await connection.execute(
                 insert(users)
                 .values(
                     id=email,
-                    tenant_id="acme",
+                    tenant_id="synycs",
                     external_subject=email,
                     email=email,
                     display_name=display_name,
@@ -59,7 +59,7 @@ async def create_schema(engine: AsyncEngine) -> None:
             user_row = (
                 await connection.execute(
                     select(users.c.id).where(
-                        users.c.tenant_id == "acme",
+                        users.c.tenant_id == "synycs",
                         users.c.email == email,
                     )
                 )
@@ -71,7 +71,7 @@ async def create_schema(engine: AsyncEngine) -> None:
                 insert(user_roles)
                 .values(
                     id=f"seed-{user_id}-{role_name}",
-                    tenant_id="acme",
+                    tenant_id="synycs",
                     user_id=user_id,
                     role_id=role_ids[role_name],
                 )

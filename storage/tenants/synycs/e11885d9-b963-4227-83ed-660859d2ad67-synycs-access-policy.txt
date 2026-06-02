@@ -1,4 +1,4 @@
-ACME CORPORATION - ACCESS CONTROL POLICY
+SYNYCS GROUP - ACCESS CONTROL POLICY
 
 All employees must use multi-factor authentication (MFA) when accessing internal systems.
 
