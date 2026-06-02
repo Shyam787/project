@@ -1,6 +1,10 @@
 {
   "realm": "enterprise-rag",
   "enabled": true,
+  "accessTokenLifespan": 1800,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 43200,
+  "offlineSessionIdleTimeout": 2592000,
   "roles": {
     "realm": [
       { "name": "tenant_admin" },

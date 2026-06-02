@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui";
-import { clearSession, getStoredToken, isTenantAdmin, readClaims } from "@/components/auth";
+import { clearSession, getStoredRefreshToken, getStoredToken, isTenantAdmin, readClaims, storeTokens } from "@/components/auth";
 import type { SessionClaims } from "@/components/auth";
 
 type DocumentRecord = {
@@ -62,6 +62,7 @@ type UserFormState = { full_name: string; email: string; password: string; confi
 type UserEditState = { full_name: string; role: string; is_active: boolean; password?: string };
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const keycloakBase = process.env.NEXT_PUBLIC_KEYCLOAK_BASE_URL ?? "http://localhost:8081";
 const roleOptions = ["employee", "manager", "hr", "finance", "security", "tenant_admin"];
 const classificationOptions = ["Public", "Internal", "Confidential", "Restricted"];
 
@@ -134,21 +135,62 @@ export function WorkspaceApp() {
     }, 4500);
   }
 
-  async function api(path: string, init: RequestInit = {}) {
-    return fetch(`${apiBase}${path}`, {
+  function handleAuthFailure() {
+    notify("Your session expired or is no longer valid. Please sign in again.", "error");
+    clearSession();
+    window.setTimeout(() => router.replace("/login"), 700);
+  }
+
+  function isAuthFailure(response: Response) {
+    return response.status === 401;
+  }
+
+  async function refreshAccessToken() {
+    const refreshToken = getStoredRefreshToken();
+    if (!refreshToken) return "";
+    try {
+      const response = await fetch(`${keycloakBase}/realms/enterprise-rag/protocol/openid-connect/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: "enterprise-rag-api",
+          grant_type: "refresh_token",
+          refresh_token: refreshToken
+        })
+      });
+      const body = await response.json();
+      if (!response.ok || !body.access_token) return "";
+      storeTokens(body.access_token, body.refresh_token ?? refreshToken);
+      setToken(body.access_token);
+      const parsed = readClaims(body.access_token);
+      if (parsed) setClaims((current) => current ? { ...current, ...parsed } : parsed);
+      return body.access_token as string;
+    } catch {
+      return "";
+    }
+  }
+
+  async function api(path: string, init: RequestInit = {}, authToken = token, retry = true) {
+    const response = await fetch(`${apiBase}${path}`, {
       ...init,
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${authToken}`,
         ...(init.headers ?? {})
       }
     });
+    if (response.status === 401 && retry) {
+      const nextToken = await refreshAccessToken();
+      if (nextToken) return api(path, init, nextToken, false);
+      handleAuthFailure();
+    }
+    return response;
   }
 
   async function loadDocuments(authToken = token) {
     if (!authToken) return;
     setDocumentsLoading(true);
     try {
-      const response = await fetch(`${apiBase}/api/v1/documents`, { headers: { Authorization: `Bearer ${authToken}` } });
+      const response = await api("/api/v1/documents", {}, authToken);
       const body = await response.json();
       if (response.ok) setDocuments(body.payload.documents);
     } finally {
@@ -157,7 +199,7 @@ export function WorkspaceApp() {
   }
 
   async function hydrateClaims(authToken: string, fallback: SessionClaims) {
-    const response = await fetch(`${apiBase}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${authToken}` } });
+    const response = await api("/api/v1/auth/me", {}, authToken);
     const body = await response.json();
     if (response.ok) {
       setClaims({
@@ -172,7 +214,7 @@ export function WorkspaceApp() {
 
   async function loadActivity(authToken = token) {
     if (!authToken) return;
-    const response = await fetch(`${apiBase}/api/v1/activity`, { headers: { Authorization: `Bearer ${authToken}` } });
+    const response = await api("/api/v1/activity", {}, authToken);
     const body = await response.json();
     if (response.ok) {
       setEvents(body.payload.events.map((event: { created_at: string; event_type: string; resource_type?: string; resource_id?: string }) => ({
@@ -188,7 +230,7 @@ export function WorkspaceApp() {
     if (!authToken) return;
     setUsersLoading(true);
     try {
-      const response = await fetch(`${apiBase}/api/v1/users`, { headers: { Authorization: `Bearer ${authToken}` } });
+      const response = await api("/api/v1/users", {}, authToken);
       const body = await response.json();
       if (response.ok) setUsers(body.payload.users);
     } finally {
@@ -215,6 +257,7 @@ export function WorkspaceApp() {
     try {
       const response = await api("/api/v1/documents/upload", { method: "POST", body: data });
       const body = await response.json();
+      if (isAuthFailure(response)) return;
       if (!response.ok) {
         notify(body.error?.message ?? body.detail ?? "Upload failed.", "error");
         addEvent("Upload", "Failed", file.name);
@@ -246,6 +289,7 @@ export function WorkspaceApp() {
       body: JSON.stringify({ query: prompt, stream: false })
     });
     const body = await response.json();
+    if (isAuthFailure(response)) return;
     if (!response.ok) {
       notify(body.error?.message ?? "Query failed.", "error");
       addEvent("Query", "Failed", prompt);
@@ -265,6 +309,7 @@ export function WorkspaceApp() {
       ? `/api/v1/documents/${document.document_id}`
       : `/api/v1/documents/${document.document_id}/${action === "permanent" ? "permanent" : action}`;
     const response = await api(path, { method: action === "archive" || action === "restore" ? "POST" : "DELETE" });
+    if (isAuthFailure(response)) return;
     if (!response.ok) {
       notify(`${action} failed.`, "error");
       return;
@@ -277,6 +322,7 @@ export function WorkspaceApp() {
 
   async function download(document: DocumentRecord) {
     const response = await api(`/api/v1/documents/${document.document_id}/download`);
+    if (isAuthFailure(response)) return;
     if (!response.ok) {
       notify("Download unavailable for this document.", "error");
       return;
@@ -307,6 +353,7 @@ export function WorkspaceApp() {
       })
     });
     const body = await response.json();
+    if (isAuthFailure(response)) return;
     if (!response.ok) {
       notify(body.error?.message ?? body.detail ?? "Document update failed.", "error");
       return;
@@ -334,6 +381,7 @@ export function WorkspaceApp() {
       body: JSON.stringify(payload)
     });
     const body = await response.json();
+    if (isAuthFailure(response)) return false;
     if (!response.ok) {
       notify(body.error?.message ?? body.detail ?? "User creation failed.", "error");
       return false;
@@ -351,6 +399,7 @@ export function WorkspaceApp() {
       body: JSON.stringify(payload)
     });
     const body = await response.json();
+    if (isAuthFailure(response)) return false;
     if (!response.ok) {
       notify(body.error?.message ?? body.detail ?? "User update failed.", "error");
       return false;
@@ -368,6 +417,7 @@ export function WorkspaceApp() {
       body: JSON.stringify({ confirmation_password: confirmationPassword })
     });
     const body = await response.json();
+    if (isAuthFailure(response)) return false;
     if (!response.ok) {
       notify(body.error?.message ?? body.detail ?? "User deletion failed.", "error");
       return false;
@@ -385,6 +435,7 @@ export function WorkspaceApp() {
       body: JSON.stringify({ confirmation_password: confirmationPassword })
     });
     const body = await response.json();
+    if (isAuthFailure(response)) return false;
     if (!response.ok) {
       notify(body.error?.message ?? body.detail ?? "Organization deletion failed.", "error");
       return false;

@@ -9,6 +9,7 @@ export type SessionClaims = {
 };
 
 export const TOKEN_KEY = "enterprise_rag_token";
+export const REFRESH_TOKEN_KEY = "enterprise_rag_refresh_token";
 export const USER_KEY = "enterprise_rag_user";
 const governedRoles = new Set(["tenant_admin", "manager", "employee", "hr", "finance", "security"]);
 
@@ -39,12 +40,26 @@ export function getStoredToken() {
   return window.localStorage.getItem(TOKEN_KEY) ?? "";
 }
 
+export function getStoredRefreshToken() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY) ?? "";
+}
+
 export function storeToken(token: string) {
+  if (typeof window === "undefined") return;
   window.localStorage.setItem(TOKEN_KEY, token);
 }
 
+export function storeTokens(accessToken: string, refreshToken?: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TOKEN_KEY, accessToken);
+  if (refreshToken) window.localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+}
+
 export function clearSession() {
+  if (typeof window === "undefined") return;
   window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export function isTenantAdmin(claims: SessionClaims | null) {

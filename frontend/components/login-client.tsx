@@ -5,7 +5,7 @@ import { Eye, KeyRound, LogIn } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui";
-import { readClaims, storeToken } from "@/components/auth";
+import { readClaims, storeTokens } from "@/components/auth";
 
 const keycloakBase = process.env.NEXT_PUBLIC_KEYCLOAK_BASE_URL ?? "http://localhost:8081";
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -60,7 +60,7 @@ export function LoginClient() {
       }
       return;
     }
-    storeToken(body.access_token);
+    storeTokens(body.access_token, body.refresh_token);
     const claims = readClaims(body.access_token);
     setStatusTone("success");
     setStatus(`Authenticated as ${claims?.subject ?? username}. Redirecting to workspace...`);

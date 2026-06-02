@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, CheckCircle2, Circle } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Eye, EyeOff } from "lucide-react";
 import { Badge } from "@/components/ui";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -21,6 +21,7 @@ export function SignupClient() {
   const [status, setStatus] = useState("");
   const [statusTone, setStatusTone] = useState<"info" | "error" | "success">("info");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const passwordStarted = form.password.length > 0;
   const checks = useMemo(() => [
     ["Minimum 12 characters", form.password.length >= 12],
@@ -77,8 +78,8 @@ export function SignupClient() {
               <Field label="Organization ID" value={form.organization_id} onChange={(value) => update("organization_id", value)} placeholder="company-id" />
               <Field label="Admin Full Name" value={form.admin_full_name} onChange={(value) => update("admin_full_name", value)} />
               <Field label="Admin Email" type="email" value={form.admin_email} onChange={(value) => update("admin_email", value)} />
-              <Field label="Password" type="password" value={form.password} onChange={(value) => update("password", value)} />
-              <Field label="Confirm Password" type="password" value={form.confirm_password} onChange={(value) => update("confirm_password", value)} />
+              <PasswordField label="Password" showPassword={showPassword} toggle={() => setShowPassword(!showPassword)} value={form.password} onChange={(value) => update("password", value)} />
+              <Field label="Confirm Password" type={showPassword ? "text" : "password"} value={form.confirm_password} onChange={(value) => update("confirm_password", value)} />
             </div>
             <div className="mt-4 grid gap-2 rounded-lg bg-slate-50 p-3 text-sm">
               {checks.map(([label, passed]) => (
@@ -106,6 +107,20 @@ function Field({ label, value, onChange, type = "text", placeholder = "" }: { la
     <label className="block text-sm font-medium">
       {label}
       <input required className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function PasswordField({ label, value, onChange, showPassword, toggle }: { label: string; value: string; onChange: (value: string) => void; showPassword: boolean; toggle: () => void }) {
+  return (
+    <label className="block text-sm font-medium">
+      {label}
+      <div className="mt-1 flex rounded-md border border-slate-300 bg-white">
+        <input required className="min-w-0 flex-1 rounded-md px-3 py-2 text-sm outline-none" type={showPassword ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} />
+        <button className="px-3 text-slate-500" title={showPassword ? "Hide password" : "Show password"} type="button" onClick={toggle}>
+          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
     </label>
   );
 }
