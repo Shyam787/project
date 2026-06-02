@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", repr=False)
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.1-8b-instant"
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_batch_size: int = 64
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_top_k: int = 12
+    reranker_context_k: int = 5
+    reranker_min_score: float = 0.0
     local_auto_migrate: bool = True
     storage_root: str = "storage/tenants"
 

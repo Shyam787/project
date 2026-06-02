@@ -297,7 +297,7 @@ async def update_tenant_user(
         validate_password(password)
     row = (
         await session.execute(
-            select(users.c.email, users.c.is_active).where(
+            select(users.c.email, users.c.is_active, users.c.external_subject).where(
                 users.c.id == user_id,
                 users.c.tenant_id == identity.tenant.tenant_id,
             )
@@ -319,7 +319,7 @@ async def update_tenant_user(
     if role_row is None:
         raise ValueError("Role is not configured for this tenant.")
     await keycloak.update_user(
-        user_id=user_id,
+        user_id=row.external_subject,
         full_name=full_name,
         tenant_id=identity.tenant.tenant_id,
         roles={role},
@@ -375,7 +375,7 @@ async def delete_tenant_user(
     )
     row = (
         await session.execute(
-            select(users.c.is_active).where(
+            select(users.c.is_active, users.c.external_subject).where(
                 users.c.id == user_id,
                 users.c.tenant_id == identity.tenant.tenant_id,
             )
@@ -388,7 +388,7 @@ async def delete_tenant_user(
     actor_user_id = await identity_db_user_id(session=session, identity=identity)
     if user_id == actor_user_id:
         raise ValueError("You cannot delete your own administrator account.")
-    await keycloak.delete_user(user_id=user_id)
+    await keycloak.delete_user(user_id=row.external_subject)
     await session.execute(delete(user_roles).where(user_roles.c.user_id == user_id, user_roles.c.tenant_id == identity.tenant.tenant_id))
     await session.execute(update(audit_logs).where(audit_logs.c.user_id == user_id, audit_logs.c.tenant_id == identity.tenant.tenant_id).values(user_id=None))
     await session.execute(delete(users).where(users.c.id == user_id, users.c.tenant_id == identity.tenant.tenant_id))
@@ -426,9 +426,9 @@ async def delete_organization(
         await vector_store.delete_document(tenant_id=tenant_id, document_id=document_id)
         if storage_uri:
             Path(storage_uri).unlink(missing_ok=True)
-    user_rows = (await session.execute(select(users.c.id).where(users.c.tenant_id == tenant_id))).all()
+    user_rows = (await session.execute(select(users.c.external_subject).where(users.c.tenant_id == tenant_id))).all()
     for row in user_rows:
-        await keycloak.delete_user(user_id=row.id)
+        await keycloak.delete_user(user_id=row.external_subject)
     await session.execute(delete(hallucination_results).where(hallucination_results.c.tenant_id == tenant_id))
     await session.execute(delete(feedback).where(feedback.c.tenant_id == tenant_id))
     await session.execute(delete(messages).where(messages.c.tenant_id == tenant_id))

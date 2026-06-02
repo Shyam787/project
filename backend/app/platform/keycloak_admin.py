@@ -15,6 +15,37 @@ class KeycloakAdminClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
+    async def _resolve_realm_user_id(
+        self, *, client: httpx.AsyncClient, headers: dict[str, str], user_id: str
+    ) -> str:
+        current = await client.get(
+            f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users/{user_id}",
+            headers=headers,
+        )
+        if current.status_code != 404:
+            current.raise_for_status()
+            return user_id
+        lookup = await client.get(
+            f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users",
+            headers=headers,
+            params={"username": user_id, "exact": "true"},
+        )
+        lookup.raise_for_status()
+        users = lookup.json()
+        if users:
+            return users[0]["id"]
+        lookup = await client.get(
+            f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users",
+            headers=headers,
+            params={"email": user_id, "exact": "true"},
+        )
+        lookup.raise_for_status()
+        users = lookup.json()
+        if users:
+            return users[0]["id"]
+        current.raise_for_status()
+        return user_id
+
     async def _admin_token(self) -> str:
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(
@@ -117,6 +148,7 @@ class KeycloakAdminClient:
         headers = {"Authorization": f"Bearer {token}"}
         first_name, last_name = split_keycloak_name(full_name)
         async with httpx.AsyncClient(timeout=20) as client:
+            user_id = await self._resolve_realm_user_id(client=client, headers=headers, user_id=user_id)
             current = await client.get(
                 f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users/{user_id}",
                 headers=headers,
@@ -180,10 +212,17 @@ class KeycloakAdminClient:
 
     async def delete_user(self, *, user_id: str) -> None:
         token = await self._admin_token()
+        headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                user_id = await self._resolve_realm_user_id(client=client, headers=headers, user_id=user_id)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404:
+                    return
+                raise
             response = await client.delete(
                 f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users/{user_id}",
-                headers={"Authorization": f"Bearer {token}"},
+                headers=headers,
             )
             if response.status_code not in {204, 404}:
                 response.raise_for_status()

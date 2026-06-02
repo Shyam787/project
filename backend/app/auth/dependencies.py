@@ -48,7 +48,7 @@ async def require_identity(
         try:
             row = (
                 await session.execute(
-                    select(users.c.is_active, users.c.display_name).where(
+                    select(users.c.id, users.c.is_active, users.c.display_name).where(
                         users.c.tenant_id == identity.tenant.tenant_id,
                         (
                             (users.c.external_subject == identity.user_id)
@@ -61,6 +61,7 @@ async def require_identity(
             if row is not None and not row.is_active:
                 raise authentication_error("Your account is inactive. Contact your organization administrator to regain access.")
             if row is not None:
+                identity.user_id = row.id
                 identity.full_name = row.display_name
         except HTTPException:
             raise
@@ -69,7 +70,7 @@ async def require_identity(
         return identity
     row = (
         await session.execute(
-            select(users.c.tenant_id, users.c.is_active, users.c.display_name).where(
+            select(users.c.id, users.c.tenant_id, users.c.is_active, users.c.display_name).where(
                 (users.c.external_subject == identity.user_id)
                 | (users.c.id == identity.user_id)
                 | (users.c.email == (identity.email or ""))
@@ -81,8 +82,8 @@ async def require_identity(
     if not row.is_active:
         raise authentication_error("Your account is inactive. Contact your organization administrator to regain access.")
     return IdentityContext(
-        user_id=identity.user_id,
         email=identity.email,
+        user_id=row.id,
         full_name=row.display_name,
         tenant=resolve_tenant_context(row.tenant_id),
         roles=identity.roles,

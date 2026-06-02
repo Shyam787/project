@@ -13,6 +13,7 @@ qdrant-client<2.0,>=1.9
 python-multipart<1.0,>=0.0.12
 pypdf<6.0,>=5.1
 python-docx<2.0,>=1.1
+sentence-transformers<4.0,>=3.0
 
 [test]
 httpx<1.0,>=0.27

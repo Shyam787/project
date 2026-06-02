@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   BarChart3,
+  ChevronRight,
   Download,
   Edit3,
   FileText,
@@ -17,6 +18,8 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   X,
   UploadCloud
@@ -42,6 +45,8 @@ type DocumentRecord = {
 
 type ChatResult = {
   answer: string;
+  message_id?: string;
+  cache_hit?: boolean;
   citations: Array<{
     citation_id: string;
     document_id: string;
@@ -60,6 +65,29 @@ type Toast = { id: number; tone: "success" | "error" | "info"; message: string }
 type UserRecord = { user_id: string; email: string; full_name: string; roles: string[]; is_active: boolean; created_at: string };
 type UserFormState = { full_name: string; email: string; password: string; confirm_password: string; role: string; is_active: boolean };
 type UserEditState = { full_name: string; role: string; is_active: boolean; password?: string };
+type AuditEntry = {
+  conversation_id: string;
+  message_id: string;
+  created_at: string;
+  user_email: string;
+  user_name: string;
+  query: string;
+  answer: string;
+  retrieved_chunks: Array<{
+    citation_id: string;
+    chunk_id: string;
+    document_id: string;
+    filename: string;
+    classification: string;
+    retrieval_source: string;
+    retrieval_score: number;
+    rerank_score: number | null;
+    text: string;
+  }>;
+  citations: ChatResult["citations"];
+  hallucination: ChatResult["hallucination"];
+  retrieval: Record<string, number | string[]>;
+};
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const keycloakBase = process.env.NEXT_PUBLIC_KEYCLOAK_BASE_URL ?? "http://localhost:8081";
@@ -80,17 +108,20 @@ export function WorkspaceApp() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const admin = isTenantAdmin(claims);
   const canUpload = admin;
   const primaryRole = admin ? "tenant_admin" : claims?.roles[0] ?? "employee";
-  const nav = admin ? ["home", "documents", "ask", "users", "settings"] : ["home", "documents", "ask"];
+  const nav = admin ? ["home", "documents", "ask", "users", "audit", "settings"] : ["home", "documents", "ask", "audit"];
 
   useEffect(() => {
     const stored = getStoredToken();
@@ -105,6 +136,7 @@ export function WorkspaceApp() {
     loadDocuments(stored);
     loadUsers(stored);
     loadActivity(stored);
+    loadAudit(stored);
   }, [router]);
 
   const visibleDocs = useMemo(() => {
@@ -226,6 +258,18 @@ export function WorkspaceApp() {
     }
   }
 
+  async function loadAudit(authToken = token) {
+    if (!authToken) return;
+    setAuditLoading(true);
+    try {
+      const response = await api("/api/v1/audit/queries", {}, authToken);
+      const body = await response.json();
+      if (response.ok) setAuditEntries(body.payload.entries);
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
   async function loadUsers(authToken = token) {
     if (!authToken) return;
     setUsersLoading(true);
@@ -283,23 +327,52 @@ export function WorkspaceApp() {
     const prompt = override ?? query;
     if (!prompt.trim()) return;
     notify("Searching authorized documents with governed retrieval...", "info");
-    const response = await api("/api/v1/chat/query", {
+    setAsking(true);
+    setChat(null);
+    try {
+      const response = await api("/api/v1/chat/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: prompt, stream: false })
+      });
+      const body = await response.json();
+      if (isAuthFailure(response)) return;
+      if (!response.ok) {
+        notify(body.error?.message ?? "Query failed.", "error");
+        addEvent("Query", "Failed", prompt);
+        return;
+      }
+      setChat(body.payload);
+      setQuery(prompt);
+      notify("Answer generated from authorized evidence.", "success");
+      addEvent("Query", "Completed", prompt);
+      await loadActivity();
+      await loadAudit();
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  async function sendFeedback(messageId: string | undefined, rating: "thumbs_up" | "thumbs_down") {
+    if (!messageId) {
+      notify("Feedback is available after a persisted answer is generated.", "error");
+      return false;
+    }
+    const response = await api("/api/v1/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: prompt, stream: false })
+      body: JSON.stringify({ message_id: messageId, rating })
     });
     const body = await response.json();
     if (isAuthFailure(response)) return;
     if (!response.ok) {
-      notify(body.error?.message ?? "Query failed.", "error");
-      addEvent("Query", "Failed", prompt);
-      return;
+      notify(body.error?.message ?? body.detail ?? "Feedback could not be saved.", "error");
+      return false;
     }
-    setChat(body.payload);
-    setQuery(prompt);
-    notify("Answer generated from authorized evidence.", "success");
-    addEvent("Query", "Completed", prompt);
+    notify(rating === "thumbs_up" ? "Positive feedback saved for retrieval tuning." : "Feedback saved for review and retrieval tuning.", "success");
     await loadActivity();
+    await loadAudit();
+    return true;
   }
 
   async function lifecycle(document: DocumentRecord, action: "archive" | "restore" | "delete" | "permanent") {
@@ -320,8 +393,8 @@ export function WorkspaceApp() {
     await loadActivity();
   }
 
-  async function download(document: DocumentRecord) {
-    const response = await api(`/api/v1/documents/${document.document_id}/download`);
+  async function downloadDocumentById(documentId: string, filename: string) {
+    const response = await api(`/api/v1/documents/${documentId}/download`);
     if (isAuthFailure(response)) return;
     if (!response.ok) {
       notify("Download unavailable for this document.", "error");
@@ -331,9 +404,13 @@ export function WorkspaceApp() {
     const url = URL.createObjectURL(blob);
     const link = window.document.createElement("a");
     link.href = url;
-    link.download = document.title;
+    link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function download(document: DocumentRecord) {
+    await downloadDocumentById(document.document_id, document.title);
   }
 
   async function updateDocument(document: DocumentRecord, nextClassification: string, nextRoles: string[]) {
@@ -486,8 +563,9 @@ export function WorkspaceApp() {
 
         <section className="space-y-4">
           {active === "home" && <Dashboard summary={summary} claims={claims} />}
-          {active === "ask" && <AskView query={query} setQuery={setQuery} ask={ask} chat={chat} clearChat={() => setChat(null)} />}
+          {active === "ask" && <AskView query={query} setQuery={setQuery} ask={ask} chat={chat} clearChat={() => setChat(null)} sendFeedback={sendFeedback} asking={asking} />}
           {active === "users" && admin && <UsersView users={users} tenant={claims.tenant} createUser={createUser} updateUser={updateUser} deleteUser={deleteUser} reload={() => loadUsers()} loading={usersLoading} />}
+          {active === "audit" && <AuditLogView entries={auditEntries} reload={() => loadAudit()} loading={auditLoading} downloadDocument={downloadDocumentById} admin={admin} />}
           {active === "documents" && (
             <DocumentsView
               admin={admin}
@@ -675,34 +753,71 @@ function DocumentAccessEditor({
   );
 }
 
-function AskView({ query, setQuery, ask, chat, clearChat }: { query: string; setQuery: (value: string) => void; ask: (event?: FormEvent, override?: string) => void; chat: ChatResult | null; clearChat: () => void }) {
+function AskView({ query, setQuery, ask, chat, clearChat, sendFeedback, asking }: { query: string; setQuery: (value: string) => void; ask: (event?: FormEvent, override?: string) => void; chat: ChatResult | null; clearChat: () => void; sendFeedback: (messageId: string | undefined, rating: "thumbs_up" | "thumbs_down") => Promise<boolean | void>; asking: boolean }) {
   return (
     <div className="space-y-4">
       <Card title="Ask AI">
         <form className="space-y-3" onSubmit={ask}>
           <textarea className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ask one or more questions about documents you are authorized to access." />
           <div className="flex flex-wrap gap-2">
-            <button className="inline-flex items-center gap-2 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white">
-              <MessageSquareText className="h-4 w-4" /> Ask with governed retrieval
+            <button disabled={asking} className="inline-flex items-center gap-2 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70">
+              {asking ? <RefreshCw className="h-4 w-4 animate-spin" /> : <MessageSquareText className="h-4 w-4" />} {asking ? "Generating answer..." : "Ask with governed retrieval"}
             </button>
             {chat && <button className="rounded-md border border-slate-300 px-4 py-2 text-sm" onClick={clearChat} type="button">Clear answer</button>}
           </div>
         </form>
       </Card>
-      {chat && <Answer chat={chat} />}
+      {asking && <AnswerLoading />}
+      {chat && <Answer chat={chat} sendFeedback={sendFeedback} />}
     </div>
   );
 }
 
-function Answer({ chat }: { chat: ChatResult }) {
+function AnswerLoading() {
+  return (
+    <Card title="Generating answer">
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm text-slate-600"><RefreshCw className="h-4 w-4 animate-spin text-teal-700" /> Running RBAC-safe retrieval, RRF, reranking, grounding, and citation validation.</div>
+        <div className="grid gap-2">
+          <div className="h-4 w-3/4 animate-pulse rounded bg-slate-100" />
+          <div className="h-4 w-5/6 animate-pulse rounded bg-slate-100" />
+          <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function Answer({ chat, sendFeedback }: { chat: ChatResult; sendFeedback: (messageId: string | undefined, rating: "thumbs_up" | "thumbs_down") => Promise<boolean | void> }) {
+  const [selectedFeedback, setSelectedFeedback] = useState<"thumbs_up" | "thumbs_down" | null>(null);
+
+  useEffect(() => {
+    setSelectedFeedback(null);
+  }, [chat.message_id]);
+
+  async function submitFeedback(rating: "thumbs_up" | "thumbs_down") {
+    if (selectedFeedback) return;
+    const saved = await sendFeedback(chat.message_id, rating);
+    if (saved) setSelectedFeedback(rating);
+  }
+
   return (
     <div className="space-y-4">
       <Card title="Grounded answer">
         <div className="mb-3 flex flex-wrap gap-2">
           <Badge tone={chat.hallucination.score === 0 ? "success" : "danger"}>Grounding: {chat.hallucination.confidence}</Badge>
           <Badge tone="accent">Citations validated</Badge>
+          <Badge tone={chat.cache_hit ? "neutral" : "success"}>{chat.cache_hit ? "Cached response" : "Fresh retrieval"}</Badge>
         </div>
         <pre className="whitespace-pre-wrap rounded-md bg-teal-50 p-3 text-sm text-teal-950">{chat.answer}</pre>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button disabled={Boolean(selectedFeedback)} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition disabled:cursor-not-allowed ${selectedFeedback === "thumbs_up" ? "border-teal-600 bg-teal-600 text-white shadow-sm" : "border-teal-200 text-teal-800 disabled:opacity-50"}`} onClick={() => submitFeedback("thumbs_up")} type="button">
+            <ThumbsUp className="h-4 w-4" /> Helpful
+          </button>
+          <button disabled={Boolean(selectedFeedback)} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition disabled:cursor-not-allowed ${selectedFeedback === "thumbs_down" ? "border-red-600 bg-red-600 text-white shadow-sm" : "border-slate-300 text-slate-700 disabled:opacity-50"}`} onClick={() => submitFeedback("thumbs_down")} type="button">
+            <ThumbsDown className="h-4 w-4" /> Needs tuning
+          </button>
+        </div>
       </Card>
       <Card title="Why this answer was generated">
         <div className="grid gap-3">
@@ -726,6 +841,103 @@ function Answer({ chat }: { chat: ChatResult }) {
 
 function ActivityView({ events }: { events: EventRow[] }) {
   return <Card title="Workspace activity">{events.length ? events.map((event) => <div key={`${event.time}-${event.action}`} className="border-b border-slate-100 py-3 text-sm"><b>{event.action}</b> - {event.result}<div className="text-xs text-slate-500">{event.time} - {event.detail}</div></div>) : <p className="text-sm text-slate-500">Activity appears here after uploads, queries, and lifecycle actions.</p>}</Card>;
+}
+
+function uniqueAuditSources(entry: AuditEntry) {
+  const sources = new Map<string, { document_id: string; filename: string; classification: string; chunk_count: number }>();
+  for (const chunk of entry.retrieved_chunks) {
+    const current = sources.get(chunk.document_id);
+    if (current) {
+      current.chunk_count += 1;
+    } else {
+      sources.set(chunk.document_id, {
+        document_id: chunk.document_id,
+        filename: chunk.filename,
+        classification: chunk.classification,
+        chunk_count: 1
+      });
+    }
+  }
+  return Array.from(sources.values());
+}
+
+function AuditLogView({ entries, reload, loading, downloadDocument, admin }: { entries: AuditEntry[]; reload: () => void; loading: boolean; downloadDocument: (documentId: string, filename: string) => void; admin: boolean }) {
+  return (
+    <div className="space-y-4">
+      <Card title={admin ? "Organization query audit log" : "My query audit log"}>
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-600">{admin ? "Every governed organization query is recorded with the user, source files, retrieved chunk references, generated response, citations, and hallucination risk." : "Your governed queries are recorded with source files, retrieved chunk references, generated response, citations, and hallucination risk."}</p>
+          <button disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-70" onClick={reload} type="button">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+        {loading && <div className="h-24 animate-pulse rounded-lg bg-slate-100" />}
+        <div className="grid gap-3">
+          {entries.map((entry) => (
+            <details className="group rounded-lg border border-slate-200 p-3 text-sm" key={entry.message_id}>
+              <summary className="cursor-pointer list-none">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div className="flex gap-2">
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition group-open:rotate-90" />
+                    <div>
+                      <div className="font-medium">{entry.query}</div>
+                    <div className="mt-1 text-xs text-slate-500">{entry.user_name} - {entry.user_email} - {new Date(entry.created_at).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone={entry.hallucination?.score === 0 ? "success" : "danger"}>Hallucination risk {entry.hallucination?.score === 0 ? "low" : "elevated"}</Badge>
+                    <Badge tone="accent">{entry.retrieved_chunks.length} chunks</Badge>
+                    <Badge>{uniqueAuditSources(entry).length} source file(s)</Badge>
+                  </div>
+                </div>
+              </summary>
+              <div className="mt-4 grid gap-3">
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Generated response</div>
+                  <pre className="whitespace-pre-wrap rounded-md bg-teal-50 p-3 text-xs text-teal-950">{entry.answer}</pre>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Source files</div>
+                  <div className="grid gap-2">
+                    {uniqueAuditSources(entry).map((source) => (
+                      <div className="rounded-md border border-slate-200 p-3" key={source.document_id}>
+                        <div className="flex flex-wrap gap-2">
+                          <b>{source.filename}</b>
+                          <Badge>{source.classification}</Badge>
+                          <Badge tone="accent">{source.chunk_count} retrieved chunk(s)</Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-slate-500">Document: {source.document_id}</div>
+                        <button className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-700" onClick={() => downloadDocument(source.document_id, source.filename)} type="button">
+                          <Download className="h-3.5 w-3.5" /> Download source
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Retrieved chunk references</div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {entry.retrieved_chunks.map((chunk) => (
+                      <div className="rounded-md bg-slate-50 p-3 text-xs text-slate-600" key={chunk.chunk_id}>
+                        <div className="font-mono">{chunk.chunk_id}</div>
+                        <div className="mt-1">{chunk.filename}</div>
+                        <div className="mt-1">[{chunk.citation_id}] - {chunk.retrieval_source} - rerank {Number(chunk.rerank_score ?? 0).toFixed(4)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase text-slate-500">Retrieval diagnostics</div>
+                  <pre className="overflow-auto rounded-md bg-slate-50 p-3 text-xs">{JSON.stringify(entry.retrieval, null, 2)}</pre>
+                </div>
+              </div>
+            </details>
+          ))}
+          {!loading && !entries.length && <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No query audit records yet.</div>}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, loading }: { users: UserRecord[]; tenant: string; createUser: (payload: UserFormState) => Promise<boolean>; updateUser: (userId: string, payload: UserEditState) => Promise<boolean>; deleteUser: (user: UserRecord, confirmationPassword: string) => Promise<boolean>; reload: () => void; loading: boolean }) {
@@ -802,9 +1014,16 @@ function UserFormModal({ title, onClose, onSubmit }: { title: string; onClose: (
 
 function UserEditModal({ user, onClose, onSubmit }: { user: UserRecord; onClose: () => void; onSubmit: (payload: UserEditState) => Promise<void> }) {
   const [form, setForm] = useState<UserEditState>({ full_name: user.full_name, role: user.roles[0] ?? "employee", is_active: user.is_active, password: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setForm({ full_name: user.full_name, role: user.roles[0] ?? "employee", is_active: user.is_active, password: "" });
+    setSaving(false);
+  }, [user.user_id, user.full_name, user.roles, user.is_active]);
+
   return (
     <Modal title="Edit user" onClose={onClose}>
-      <form className="grid gap-3" onSubmit={async (event) => { event.preventDefault(); await onSubmit({ ...form, password: form.password || undefined }); }}>
+      <form className="grid gap-3" onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSubmit({ ...form, password: form.password || undefined }); } finally { setSaving(false); } }}>
         <div className="text-sm text-slate-500">{user.email}</div>
         <input required className="rounded-md border border-slate-300 px-3 py-2 text-sm" value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -812,7 +1031,9 @@ function UserEditModal({ user, onClose, onSubmit }: { user: UserRecord; onClose:
           <label className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm"><input checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} type="checkbox" /> Active user</label>
         </div>
         <input className="rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="New password (optional)" type="password" value={form.password ?? ""} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-        <button className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Save changes</button>
+        <button disabled={saving} className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-70">
+          {saving && <RefreshCw className="h-4 w-4 animate-spin" />} {saving ? "Saving changes..." : "Save changes"}
+        </button>
       </form>
     </Modal>
   );

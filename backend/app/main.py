@@ -13,10 +13,12 @@ from app.core.errors import error_response, http_exception_handler, validation_e
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestContextMiddleware
 from app.core.metrics import MetricsMiddleware
+from app.cache.redis_cache import create_redis_client
 from app.db.bootstrap import create_schema
 from app.db.session import create_engine, create_session_factory
 from app.documents.router import router as documents_router
 from app.platform.router import router as platform_router
+from app.retrieval.embeddings import LocalBgeM3EmbeddingProvider
 from app.retrieval.qdrant_store import QdrantVectorStore
 
 
@@ -34,7 +36,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved_settings
     app.state.engine = create_engine(resolved_settings)
     app.state.session_factory = create_session_factory(app.state.engine)
-    app.state.vector_store = QdrantVectorStore(resolved_settings.qdrant_url)
+    app.state.redis = create_redis_client(resolved_settings)
+    app.state.vector_store = QdrantVectorStore(
+        resolved_settings.qdrant_url,
+        embedding_provider=LocalBgeM3EmbeddingProvider(
+            resolved_settings.embedding_model,
+            batch_size=resolved_settings.embedding_batch_size,
+        ),
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3002"],
@@ -60,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
+        await app.state.redis.aclose()
         await app.state.engine.dispose()
 
     @app.get("/metrics", include_in_schema=False)

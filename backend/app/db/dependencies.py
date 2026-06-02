@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends, Request
+import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.retrieval.qdrant_store import QdrantVectorStore
@@ -17,5 +18,10 @@ def get_vector_store(request: Request) -> QdrantVectorStore:
     return request.app.state.vector_store
 
 
+def get_redis_client(request: Request) -> redis.Redis:
+    return request.app.state.redis
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 VectorStoreDep = Annotated[QdrantVectorStore, Depends(get_vector_store)]
+RedisDep = Annotated[redis.Redis, Depends(get_redis_client)]

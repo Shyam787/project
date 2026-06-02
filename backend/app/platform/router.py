@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.audit.service import list_recent_activity
+from app.audit.service import list_query_audit_entries, list_recent_activity
 from app.auth.dependencies import require_permission
 from app.auth.models import IdentityContext
 from app.core.config import get_settings
@@ -272,6 +272,24 @@ async def recent_activity(
     return {
         "success": True,
         "payload": {"events": payload},
+        "metadata": {"request_id": getattr(request.state, "request_id", "unknown")},
+        "error": None,
+    }
+
+
+@router.get("/audit/queries")
+async def query_audit_log(
+    request: Request,
+    session: SessionDep,
+    identity: Annotated[IdentityContext, Depends(require_permission(Permission.DOCUMENT_READ))],
+) -> dict:
+    try:
+        payload = await list_query_audit_entries(session=session, identity=identity)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "payload": {"entries": payload},
         "metadata": {"request_id": getattr(request.state, "request_id", "unknown")},
         "error": None,
     }

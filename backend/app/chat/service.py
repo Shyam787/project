@@ -1,13 +1,21 @@
 import re
+import json
+from time import perf_counter
+from uuid import uuid4
+
+import redis.asyncio as redis
+from sqlalchemy.dialects.postgresql import insert
 
 from app.auth.models import IdentityContext
 from app.audit.service import record_audit_event
+from app.cache.redis_cache import QUERY_RESPONSE_TTL_SECONDS, tenant_cache_key
 from app.documents.service import authorized_chunks_for_identity, ensure_identity_records
 from app.generation.groq import GroqLLMProvider
 from app.generation.models import GenerationRequest
 from app.generation.prompt import build_grounded_prompt
 from app.hallucination.scoring import verify_response
-from app.reranking.service import CrossEncoderReranker
+from app.observability.metrics import observe_hallucination_score, record_stage_latency, set_retrieval_quality
+from app.reranking.service import CrossEncoderProvider, CrossEncoderReranker, LocalCrossEncoderProvider
 from app.retrieval.context import assemble_retrieval_context
 from app.retrieval.fusion import reciprocal_rank_fusion
 from app.retrieval.models import AuthorizedRetrievalScope
@@ -16,29 +24,10 @@ from app.retrieval.query import prepare_query
 from app.retrieval.sparse import BM25SparseIndex, normalize_tokens
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
+from app.db.schema import conversations, hallucination_results, messages
 
 QUESTION_SPLIT_PATTERN = re.compile(r"(?:^|\n|\s)(?:\d+[\).]\s*)?([^?\n]+[?])")
-
-
-class TokenOverlapRerankerProvider:
-    async def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
-        scores: list[float] = []
-        for query, text in pairs:
-            query_parts = _extract_questions(query)
-            query_token_sets = [set(normalize_tokens(part)) for part in query_parts]
-            query_token_sets.append(set(normalize_tokens(query)))
-            text_tokens = set(normalize_tokens(text))
-            query_token_sets = [tokens for tokens in query_token_sets if tokens]
-            if not query_token_sets:
-                scores.append(0.0)
-            else:
-                scores.append(
-                    max(
-                        len(query_tokens & text_tokens) / len(query_tokens)
-                        for query_tokens in query_token_sets
-                    )
-                )
-        return scores
+_reranker_providers: dict[str, CrossEncoderProvider] = {}
 
 
 async def answer_query(
@@ -48,8 +37,41 @@ async def answer_query(
     identity: IdentityContext,
     query: str,
     settings: Settings | None = None,
+    cache_client: redis.Redis | None = None,
 ) -> dict:
+    pipeline_started = perf_counter()
     await ensure_identity_records(session=session, identity=identity)
+    cache_key = tenant_cache_key(
+        identity=identity,
+        category="query_response",
+        parts={"query": query.strip()},
+    )
+    if cache_client is not None:
+        cached = await cache_client.get(cache_key)
+        if cached:
+            payload = json.loads(cached)
+            payload["message_id"] = await _persist_chat_trace(
+                session=session,
+                identity=identity,
+                query=query,
+                answer=payload["answer"],
+                citations=payload["citations"],
+                hallucination=payload["hallucination"],
+                retrieval=payload["retrieval"],
+                retrieved_chunks=payload.get("retrieved_chunks", []),
+            )
+            payload["cache_hit"] = True
+            await record_audit_event(
+                session=session,
+                tenant_id=identity.tenant.tenant_id,
+                user_id=identity.user_id,
+                event_type="Query Cache Hit",
+                resource_type="query",
+                metadata={"cache_key": cache_key},
+            )
+            return payload
+
+    retrieval_started = perf_counter()
     authorized_chunks = await authorized_chunks_for_identity(
         session=session,
         identity=identity,
@@ -93,29 +115,51 @@ async def answer_query(
         )
     sparse_results = _dedupe_candidates(sparse_results)
     dense_results = _dedupe_candidates(dense_results)
+    record_stage_latency(
+        tenant_id=identity.tenant.tenant_id,
+        stage="retrieval",
+        seconds=perf_counter() - retrieval_started,
+    )
+    rerank_started = perf_counter()
     fused = reciprocal_rank_fusion(
         [dense_results, sparse_results],
-        top_k=12,
+        top_k=settings.reranker_top_k if settings else 12,
     )
-    reranked = await CrossEncoderReranker(TokenOverlapRerankerProvider()).rerank(
+    reranked = await CrossEncoderReranker(_reranker_provider(settings)).rerank(
         query=prepared.normalized_query,
         candidates=fused,
         scope=scope,
-        top_k=5,
+        top_k=settings.reranker_context_k if settings else 5,
     )
+    record_stage_latency(
+        tenant_id=identity.tenant.tenant_id,
+        stage="reranking",
+        seconds=perf_counter() - rerank_started,
+    )
+    min_rerank_score = settings.reranker_min_score if settings else 0.0
     context_candidates = [
-        candidate for candidate in reranked if (candidate.rerank_score or 0.0) >= 0.3
+        candidate for candidate in reranked if (candidate.rerank_score or 0.0) >= min_rerank_score
     ]
     context = assemble_retrieval_context(
         tenant_id=identity.tenant.tenant_id,
         candidates=context_candidates,
     )
+    generation_started = perf_counter()
     answer = await _generate_answer(
         query=query,
         context=context,
         settings=settings,
     )
+    record_stage_latency(
+        tenant_id=identity.tenant.tenant_id,
+        stage="generation",
+        seconds=perf_counter() - generation_started,
+    )
     verification = verify_response(response_text=answer, context=context)
+    observe_hallucination_score(
+        tenant_id=identity.tenant.tenant_id,
+        score=float(verification.hallucination.score),
+    )
     prompt = build_grounded_prompt(query=query, context=context)
     used_citation_ids = _used_citation_ids(answer)
     citations = [
@@ -124,38 +168,123 @@ async def answer_query(
         if citation.citation_id in used_citation_ids
     ]
     used_context_count = len(citations)
+    set_retrieval_quality(
+        tenant_id=identity.tenant.tenant_id,
+        metric="precision_at_k",
+        value=(used_context_count / max(len(context.citations), 1)),
+    )
+    set_retrieval_quality(
+        tenant_id=identity.tenant.tenant_id,
+        metric="mrr",
+        value=1.0 if used_context_count else 0.0,
+    )
+    set_retrieval_quality(
+        tenant_id=identity.tenant.tenant_id,
+        metric="ndcg",
+        value=1.0 if used_context_count else 0.0,
+    )
+    retrieved_chunks = [
+        {
+            "citation_id": citation.citation_id,
+            "chunk_id": chunk.chunk_id,
+            "document_id": chunk.document_id,
+            "filename": citation.source_location.get("filename", chunk.document_id),
+            "classification": citation.metadata.get("document", {}).get("classification", "Unknown"),
+            "retrieval_source": chunk.retrieval_source,
+            "retrieval_score": chunk.retrieval_score,
+            "rerank_score": chunk.rerank_score,
+            "text": chunk.text,
+        }
+        for citation, chunk in zip(context.citations, context.chunks, strict=True)
+    ]
+    retrieval_trace = {
+        "authorized_document_ids": sorted(allowed_document_ids),
+        "dense_count": len(dense_results),
+        "sparse_count": len(sparse_results),
+        "fused_count": len(fused),
+        "reranked_count": len(reranked),
+        "context_count": used_context_count,
+    }
+    message_id = await _persist_chat_trace(
+        session=session,
+        identity=identity,
+        query=query,
+        answer=answer,
+        citations=citations,
+        hallucination=verification.hallucination.model_dump(),
+        retrieval=retrieval_trace,
+        retrieved_chunks=retrieved_chunks,
+    )
     await record_audit_event(
         session=session,
         tenant_id=identity.tenant.tenant_id,
         user_id=identity.user_id,
         event_type="Query Submitted",
         resource_type="query",
+        resource_id=message_id,
         metadata={
             "context_count": used_context_count,
+            "retrieved_chunk_count": len(retrieved_chunks),
             "authorized_documents": len(allowed_document_ids),
+            "pipeline_seconds": perf_counter() - pipeline_started,
         },
     )
-    return {
+    payload = {
         "answer": answer,
+        "message_id": message_id,
         "citations": citations,
         "hallucination": verification.hallucination.model_dump(),
-        "retrieval": {
-            "authorized_document_ids": sorted(allowed_document_ids),
-            "dense_count": len(dense_results),
-            "sparse_count": len(sparse_results),
-            "fused_count": len(fused),
-            "reranked_count": len(reranked),
-            "context_count": used_context_count,
-        },
+        "retrieval": retrieval_trace,
+        "retrieved_chunks": retrieved_chunks,
         "prompt_citation_ids": prompt.citation_ids,
+        "cache_hit": False,
     }
+    if cache_client is not None:
+        cache_payload = {
+            key: value for key, value in payload.items()
+            if key not in {"message_id", "cache_hit"}
+        }
+        await cache_client.setex(
+            cache_key,
+            QUERY_RESPONSE_TTL_SECONDS,
+            json.dumps(cache_payload, sort_keys=True),
+        )
+    return payload
 
 
 async def _generate_answer(*, query: str, context, settings: Settings | None) -> str:
     extractive_answer = _grounded_extractive_answer(query=query, context=context)
     if not extractive_answer.startswith("I do not have"):
+        if settings and settings.groq_api_key and context.chunks:
+            prompt = build_grounded_prompt(query=query, context=context)
+            try:
+                tokens = []
+                async for token in GroqLLMProvider(settings).stream_chat(
+                    GenerationRequest(
+                        messages=prompt.messages,
+                        model=settings.groq_model,
+                        temperature=0.0,
+                    )
+                ):
+                    tokens.append(token.content)
+                generated = "".join(tokens).strip()
+                if _is_grounded_generation(generated, context):
+                    return generated
+            except Exception:
+                return extractive_answer
         return extractive_answer
     return extractive_answer
+
+
+def _is_grounded_generation(answer: str, context) -> bool:
+    if not answer:
+        return False
+    used_ids = _used_citation_ids(answer)
+    available_ids = {citation.citation_id for citation in context.citations}
+    if not used_ids or not used_ids <= available_ids:
+        return False
+    verification = verify_response(response_text=answer, context=context)
+    return float(verification.hallucination.score) <= 0.25
 
 
 def _grounded_extractive_answer(*, query: str, context) -> str:
@@ -326,3 +455,72 @@ def _format_cited_line(*, line: str, citation_id: str) -> str:
     if normalized.endswith((".", "!", "?")):
         normalized = normalized[:-1]
     return f"{normalized} [{citation_id}]."
+
+
+async def _persist_chat_trace(
+    *,
+    session: AsyncSession,
+    identity: IdentityContext,
+    query: str,
+    answer: str,
+    citations: list[dict],
+    hallucination: dict,
+    retrieval: dict,
+    retrieved_chunks: list[dict] | None = None,
+) -> str:
+    conversation_id = str(uuid4())
+    user_message_id = str(uuid4())
+    assistant_message_id = str(uuid4())
+    await session.execute(
+        insert(conversations).values(
+            id=conversation_id,
+            tenant_id=identity.tenant.tenant_id,
+            user_id=identity.user_id,
+            title=query[:240],
+        )
+    )
+    await session.execute(
+        insert(messages).values(
+            id=user_message_id,
+            tenant_id=identity.tenant.tenant_id,
+            conversation_id=conversation_id,
+            role="user",
+            content=query,
+            citation_payload={},
+        )
+    )
+    await session.execute(
+        insert(messages).values(
+            id=assistant_message_id,
+            tenant_id=identity.tenant.tenant_id,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=answer,
+            citation_payload={
+                "citations": citations,
+                "hallucination": hallucination,
+                "retrieval": retrieval,
+                "retrieved_chunks": retrieved_chunks or [],
+            },
+        )
+    )
+    await session.execute(
+        insert(hallucination_results).values(
+            id=str(uuid4()),
+            tenant_id=identity.tenant.tenant_id,
+            message_id=assistant_message_id,
+            score=int(round(float(hallucination.get("score", 0.0)) * 100)),
+            confidence=hallucination.get("confidence", "unknown"),
+            unsupported_claims=hallucination.get("unsupported_claims", []),
+        )
+    )
+    return assistant_message_id
+
+
+def _reranker_provider(settings: Settings | None) -> CrossEncoderProvider:
+    model_name = settings.reranker_model if settings else "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    provider = _reranker_providers.get(model_name)
+    if provider is None:
+        provider = LocalCrossEncoderProvider(model_name)
+        _reranker_providers[model_name] = provider
+    return provider

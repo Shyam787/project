@@ -37,7 +37,9 @@ async def ensure_identity_records(
     extra_roles: set[str] | None = None,
 ) -> None:
     tenant_id = identity.tenant.tenant_id
-    user_id = identity.user_id
+    email = identity.email or f"{identity.user_id}@local.invalid"
+    app_user_id = email if identity.email else identity.user_id
+    display_name = identity.full_name or identity.email or identity.user_id
     await session.execute(
         insert(tenants)
         .values(id=tenant_id, name=tenant_id, slug=tenant_id)
@@ -46,13 +48,21 @@ async def ensure_identity_records(
     await session.execute(
         insert(users)
         .values(
-            id=user_id,
+            id=app_user_id,
             tenant_id=tenant_id,
-            external_subject=user_id,
-            email=f"{user_id}@local.invalid",
-            display_name=user_id,
+            external_subject=identity.user_id,
+            email=email,
+            display_name=display_name,
         )
-        .on_conflict_do_nothing(index_elements=["id"])
+        .on_conflict_do_update(
+            constraint="uq_users_tenant_email",
+            set_={
+                "external_subject": identity.user_id,
+                "display_name": display_name,
+                "is_active": True,
+                "updated_at": datetime.now(timezone.utc),
+            },
+        )
     )
     for role in identity.roles | (extra_roles or set()):
         await session.execute(

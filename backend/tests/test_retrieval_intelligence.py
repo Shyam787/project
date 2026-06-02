@@ -2,8 +2,8 @@ import pytest
 
 from app.auth.models import IdentityContext
 from app.rbac.policies import Permission
-from app.reranking.service import CrossEncoderReranker
-from app.chat.service import TokenOverlapRerankerProvider, _grounded_extractive_answer
+from app.reranking.service import CrossEncoderReranker, _coerce_scores
+from app.chat.service import _grounded_extractive_answer
 from app.retrieval.context import assemble_retrieval_context
 from app.retrieval.models import AuthorizedRetrievalScope, RetrievalCandidate
 from app.retrieval.query import normalize_query, prepare_query
@@ -61,18 +61,13 @@ def test_token_normalization_matches_plural_password_terms():
     assert "what" not in normalize_tokens("What are the password requirements?")
 
 
-@pytest.mark.anyio
-async def test_token_overlap_reranker_matches_password_policy_pluralization():
-    scores = await TokenOverlapRerankerProvider().score_pairs(
-        [
-            (
-                "What are the password requirements?",
-                "Passwords must contain minimum 14 characters and one special character.",
-            )
-        ]
-    )
+def test_cross_encoder_score_logits_are_normalized_for_context_thresholds():
+    scores = _coerce_scores([-2.0, 0.0, 2.0])
 
-    assert scores[0] >= 0.5
+    assert scores[0] < scores[1] < scores[2]
+    assert 0.0 < scores[0] < 1.0
+    assert scores[1] == 0.5
+    assert 0.0 < scores[2] < 1.0
 
 
 @pytest.mark.anyio
