@@ -1,7 +1,0 @@
-Payroll Approval Policy
-Classification: Restricted
-Effective Date: 2026-01-01
-
-Only tenant administrators may approve payroll exports.
-Payroll exports above 25,000 USD require Finance review.
-Payroll reports are retained for seven years.

@@ -1,7 +1,0 @@
-Remote Work Policy
-Classification: Internal
-Effective Date: 2026-02-01
-
-Remote employees must use VPN and multi-factor authentication.
-Managers approve remote work exceptions.
-Company devices must be encrypted before offsite use.

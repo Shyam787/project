@@ -1,7 +1,0 @@
-Incident Response Policy
-Classification: Confidential
-Effective Date: 2026-04-01
-
-Critical security incidents must be reported within 30 minutes.
-The Security Operations team owns incident triage.
-Legal must review customer-impacting breach notifications.

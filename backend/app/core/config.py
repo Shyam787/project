@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     postgres_user: str = "enterprise_rag"
     postgres_password: str = Field(default="", repr=False)
     postgres_host: str = "postgres"
-    postgres_port: int = 5432
+    postgres_port: int = 55432
 
     redis_host: str = "redis"
     redis_port: int = 6379
