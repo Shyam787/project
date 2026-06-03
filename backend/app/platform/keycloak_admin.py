@@ -16,7 +16,12 @@ class KeycloakAdminClient:
         self._settings = settings
 
     async def _resolve_realm_user_id(
-        self, *, client: httpx.AsyncClient, headers: dict[str, str], user_id: str
+        self,
+        *,
+        client: httpx.AsyncClient,
+        headers: dict[str, str],
+        user_id: str,
+        lookup_values: list[str] | None = None,
     ) -> str:
         current = await client.get(
             f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users/{user_id}",
@@ -25,24 +30,25 @@ class KeycloakAdminClient:
         if current.status_code != 404:
             current.raise_for_status()
             return user_id
-        lookup = await client.get(
-            f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users",
-            headers=headers,
-            params={"username": user_id, "exact": "true"},
-        )
-        lookup.raise_for_status()
-        users = lookup.json()
-        if users:
-            return users[0]["id"]
-        lookup = await client.get(
-            f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users",
-            headers=headers,
-            params={"email": user_id, "exact": "true"},
-        )
-        lookup.raise_for_status()
-        users = lookup.json()
-        if users:
-            return users[0]["id"]
+        for value in [user_id, *(lookup_values or [])]:
+            lookup = await client.get(
+                f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users",
+                headers=headers,
+                params={"username": value, "exact": "true"},
+            )
+            lookup.raise_for_status()
+            users = lookup.json()
+            if users:
+                return users[0]["id"]
+            lookup = await client.get(
+                f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users",
+                headers=headers,
+                params={"email": value, "exact": "true"},
+            )
+            lookup.raise_for_status()
+            users = lookup.json()
+            if users:
+                return users[0]["id"]
         current.raise_for_status()
         return user_id
 
@@ -143,12 +149,18 @@ class KeycloakAdminClient:
         roles: set[str],
         enabled: bool,
         password: str | None = None,
-    ) -> None:
+        lookup_values: list[str] | None = None,
+    ) -> str:
         token = await self._admin_token()
         headers = {"Authorization": f"Bearer {token}"}
         first_name, last_name = split_keycloak_name(full_name)
         async with httpx.AsyncClient(timeout=20) as client:
-            user_id = await self._resolve_realm_user_id(client=client, headers=headers, user_id=user_id)
+            user_id = await self._resolve_realm_user_id(
+                client=client,
+                headers=headers,
+                user_id=user_id,
+                lookup_values=lookup_values,
+            )
             current = await client.get(
                 f"{self._settings.keycloak_base_url}/admin/realms/{self._settings.keycloak_realm}/users/{user_id}",
                 headers=headers,
@@ -209,13 +221,19 @@ class KeycloakAdminClient:
                     json={"type": "password", "value": password, "temporary": False},
                 )
                 reset.raise_for_status()
+        return user_id
 
-    async def delete_user(self, *, user_id: str) -> None:
+    async def delete_user(self, *, user_id: str, lookup_values: list[str] | None = None) -> None:
         token = await self._admin_token()
         headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient(timeout=20) as client:
             try:
-                user_id = await self._resolve_realm_user_id(client=client, headers=headers, user_id=user_id)
+                user_id = await self._resolve_realm_user_id(
+                    client=client,
+                    headers=headers,
+                    user_id=user_id,
+                    lookup_values=lookup_values,
+                )
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 404:
                     return

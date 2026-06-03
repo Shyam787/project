@@ -17,6 +17,8 @@ from app.cache.redis_cache import create_redis_client
 from app.db.bootstrap import create_schema
 from app.db.session import create_engine, create_session_factory
 from app.documents.router import router as documents_router
+from app.platform.demo_identity_bootstrap import ensure_demo_keycloak_identities_with_retry
+from app.platform.keycloak_admin import KeycloakAdminClient
 from app.platform.router import router as platform_router
 from app.retrieval.embeddings import LocalBgeM3EmbeddingProvider
 from app.retrieval.qdrant_store import QdrantVectorStore
@@ -66,6 +68,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def startup() -> None:
         if resolved_settings.local_auto_migrate:
             await create_schema(app.state.engine)
+        async with app.state.session_factory() as session:
+            await ensure_demo_keycloak_identities_with_retry(
+                session=session,
+                keycloak=KeycloakAdminClient(resolved_settings),
+            )
+            await session.commit()
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
