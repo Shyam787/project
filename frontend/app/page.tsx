@@ -32,7 +32,10 @@ export default function LandingPage() {
     <main className="min-h-screen bg-[#f7f8fb]">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link href="/" className="text-lg font-semibold tracking-tight">Enterprise RAG</Link>
+          <Link href="/" className="flex items-center gap-3 text-lg font-semibold tracking-tight">
+            <img src="/enterprise-rag-mark.svg" alt="" className="h-9 w-9 rounded-md" />
+            <span>Enterprise RAG</span>
+          </Link>
           <nav className="hidden items-center gap-6 text-sm text-slate-600 md:flex">
             <a href="#how">How it works</a>
             <a href="#security">Security</a>
