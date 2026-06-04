@@ -18,7 +18,12 @@ def test_observability_metrics_are_exported():
     record_rbac_denial(tenant_id="tenant-a", operation="document_read")
     record_tenant_violation(tenant_id="tenant-a", operation="retrieval")
     observe_hallucination_score(tenant_id="tenant-a", score=0.2)
-    set_retrieval_quality(tenant_id="tenant-a", metric="precision_at_k", value=0.8)
+    set_retrieval_quality(
+        tenant_id="tenant-a",
+        document_set="internal",
+        metric="precision_at_k",
+        value=0.8,
+    )
 
     payload = generate_latest().decode("utf-8")
 
@@ -27,6 +32,7 @@ def test_observability_metrics_are_exported():
     assert "enterprise_rag_tenant_violation_attempts_total" in payload
     assert "enterprise_rag_hallucination_score" in payload
     assert "enterprise_rag_retrieval_quality" in payload
+    assert 'document_set="internal"' in payload
 
 
 def test_prometheus_and_grafana_configs_are_valid():
@@ -42,3 +48,7 @@ def test_prometheus_and_grafana_configs_are_valid():
     assert prometheus["rule_files"] == ["/etc/prometheus/alerts.yml"]
     assert alerts["groups"][0]["rules"]
     assert dashboard["title"] == "Enterprise RAG Overview"
+    assert any(
+        panel["title"] == "Retrieval Quality by Document Set"
+        for panel in dashboard["panels"]
+    )

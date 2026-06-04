@@ -59,6 +59,54 @@ def test_hallucination_scoring_marks_grounded_cited_claim_supported():
     assert result.unsupported_claims == []
 
 
+def test_hallucination_scoring_ignores_question_and_intro_lines():
+    result = score_hallucination(
+        response_text=(
+            "Based on the provided context, here are the answers:\n"
+            "1. Who gets VPN access?\n"
+            "VPN access is required for remote employees [c1].\n"
+            "2. How often are access reviews conducted?\n"
+            "The policy requires annual access review [c1]."
+        ),
+        context=assemble_retrieval_context(
+            tenant_id="tenant-a",
+            candidates=[
+                RetrievalCandidate(
+                    chunk_id="chunk-1",
+                    document_id="doc-1",
+                    tenant_id="tenant-a",
+                    text=(
+                        "VPN access is required for remote employees.\n"
+                        "The policy requires annual access review."
+                    ),
+                    retrieval_source="rrf",
+                    retrieval_score=0.5,
+                    rerank_score=0.9,
+                    rank=1,
+                )
+            ],
+        ),
+    )
+
+    assert result.score == 0
+    assert result.confidence == "high"
+    assert result.unsupported_claims == []
+
+
+def test_safe_fallback_is_low_hallucination_risk():
+    result = score_hallucination(
+        response_text=(
+            "No authorized information was found that answers this question.\n\n"
+            "Possible reasons:\n"
+            "- The information does not exist in uploaded documents"
+        ),
+        context=_context(),
+    )
+
+    assert result.score == 0
+    assert result.confidence == "high"
+
+
 def test_hallucination_scoring_exposes_unsupported_claims():
     result = score_hallucination(
         response_text="The policy requires biometric scans every day.",

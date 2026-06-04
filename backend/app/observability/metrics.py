@@ -27,8 +27,8 @@ HALLUCINATION_SCORE = Histogram(
 
 RETRIEVAL_QUALITY = Gauge(
     "enterprise_rag_retrieval_quality",
-    "Retrieval quality metrics by tenant.",
-    ["tenant_id", "metric"],
+    "Retrieval quality metrics by tenant and document set.",
+    ["tenant_id", "document_set", "metric"],
 )
 
 
@@ -48,5 +48,15 @@ def observe_hallucination_score(*, tenant_id: str, score: float) -> None:
     HALLUCINATION_SCORE.labels(tenant_id=tenant_id).observe(score)
 
 
-def set_retrieval_quality(*, tenant_id: str, metric: str, value: float) -> None:
-    RETRIEVAL_QUALITY.labels(tenant_id=tenant_id, metric=metric).set(value)
+def set_retrieval_quality(
+    *,
+    tenant_id: str,
+    document_set: str = "all",
+    metric: str,
+    value: float,
+) -> None:
+    RETRIEVAL_QUALITY.labels(
+        tenant_id=tenant_id,
+        document_set=document_set,
+        metric=metric,
+    ).set(value)

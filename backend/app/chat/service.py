@@ -1,5 +1,6 @@
 import re
 import json
+import hashlib
 from time import perf_counter
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ from app.observability.metrics import observe_hallucination_score, record_stage_
 from app.reranking.service import CrossEncoderProvider, CrossEncoderReranker, LocalCrossEncoderProvider
 from app.retrieval.context import assemble_retrieval_context
 from app.retrieval.fusion import reciprocal_rank_fusion
-from app.retrieval.models import AuthorizedRetrievalScope
+from app.retrieval.models import AuthorizedRetrievalScope, ChunkRecord
 from app.retrieval.qdrant_store import QdrantVectorStore
 from app.retrieval.query import prepare_query
 from app.retrieval.sparse import BM25SparseIndex, normalize_tokens
@@ -41,10 +42,15 @@ async def answer_query(
 ) -> dict:
     pipeline_started = perf_counter()
     await ensure_identity_records(session=session, identity=identity)
+    authorized_chunks = await authorized_chunks_for_identity(
+        session=session,
+        identity=identity,
+    )
+    scope_fingerprint = _authorized_scope_fingerprint(authorized_chunks)
     cache_key = tenant_cache_key(
         identity=identity,
         category="query_response",
-        parts={"query": query.strip()},
+        parts={"query": query.strip(), "scope": scope_fingerprint},
     )
     if cache_client is not None:
         cached = await cache_client.get(cache_key)
@@ -72,10 +78,6 @@ async def answer_query(
             return payload
 
     retrieval_started = perf_counter()
-    authorized_chunks = await authorized_chunks_for_identity(
-        session=session,
-        identity=identity,
-    )
     allowed_document_ids = {chunk.document_id for chunk in authorized_chunks}
     prepared = prepare_query(
         query=query,
@@ -168,18 +170,22 @@ async def answer_query(
         if citation.citation_id in used_citation_ids
     ]
     used_context_count = len(citations)
+    document_set = _document_set_label(citations)
     set_retrieval_quality(
         tenant_id=identity.tenant.tenant_id,
+        document_set=document_set,
         metric="precision_at_k",
         value=(used_context_count / max(len(context.citations), 1)),
     )
     set_retrieval_quality(
         tenant_id=identity.tenant.tenant_id,
+        document_set=document_set,
         metric="mrr",
         value=1.0 if used_context_count else 0.0,
     )
     set_retrieval_quality(
         tenant_id=identity.tenant.tenant_id,
+        document_set=document_set,
         metric="ndcg",
         value=1.0 if used_context_count else 0.0,
     )
@@ -355,6 +361,12 @@ def _dedupe_candidates(candidates: list) -> list:
     )
 
 
+def _authorized_scope_fingerprint(chunks: list[ChunkRecord]) -> str:
+    scoped_ids = sorted(f"{chunk.document_id}:{chunk.chunk_id}" for chunk in chunks)
+    digest = hashlib.sha256("|".join(scoped_ids).encode("utf-8")).hexdigest()
+    return digest[:16]
+
+
 def _best_evidence_for_question(
     *,
     question: str,
@@ -448,6 +460,19 @@ def _is_classification_question(question: str) -> bool:
 
 def _used_citation_ids(answer: str) -> set[str]:
     return set(re.findall(r"\[(c\d+)\]", answer))
+
+
+def _document_set_label(citations: list[dict]) -> str:
+    classifications = {
+        str(citation.get("metadata", {}).get("document", {}).get("classification", "unknown")).lower()
+        for citation in citations
+    }
+    clean = sorted(label.replace(" ", "_") for label in classifications if label)
+    if not clean:
+        return "no_citations"
+    if len(clean) == 1:
+        return clean[0]
+    return "mixed_" + "_".join(clean[:4])
 
 
 def _format_cited_line(*, line: str, citation_id: str) -> str:

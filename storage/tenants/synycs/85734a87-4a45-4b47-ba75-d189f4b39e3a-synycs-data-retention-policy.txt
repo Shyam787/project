@@ -1,0 +1,9 @@
+SYNYCS GROUP - DATA RETENTION POLICY
+
+Customer support records are retained for 3 years unless legal hold applies.
+
+Employee payroll records are retained for 7 years and restricted to tenant administrators.
+
+Archived records must remain searchable only by authorized roles.
+
+Document Classification: Restricted

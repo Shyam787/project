@@ -10,6 +10,7 @@ from app.retrieval.context import RetrievalContext
 WORD_PATTERN = re.compile(r"[A-Za-z0-9_]+")
 CITATION_PATTERN = re.compile(r"\[(c\d+)\]")
 MIN_SUPPORT_SCORE = 0.2
+LOW_RISK_THRESHOLD = 0.25
 STOPWORDS = {
     "a",
     "an",
@@ -31,7 +32,11 @@ STOPWORDS = {
 
 
 def extract_claims(response_text: str) -> list[str]:
-    line_claims = [line.strip() for line in response_text.splitlines() if line.strip()]
+    line_claims = [
+        line.strip()
+        for line in response_text.splitlines()
+        if _is_evaluable_claim(line.strip())
+    ]
     if len(line_claims) > 1 or (
         len(line_claims) == 1 and re.match(r"^\d+[\).]\s+", line_claims[0])
     ):
@@ -57,7 +62,7 @@ def validate_citations(
 def score_hallucination(
     *, response_text: str, context: RetrievalContext
 ) -> HallucinationResult:
-    if response_text.startswith("I do not have enough authorized grounded evidence"):
+    if _is_safe_fallback(response_text):
         return HallucinationResult(
             score=0.0,
             confidence="high",
@@ -126,8 +131,49 @@ def _tokens(text: str) -> set[str]:
 
 
 def _confidence(score: float) -> str:
-    if score == 0:
+    if score <= LOW_RISK_THRESHOLD:
         return "high"
     if score <= 0.5:
         return "medium"
     return "low"
+
+
+def _is_safe_fallback(response_text: str) -> bool:
+    normalized = response_text.strip().lower()
+    return normalized.startswith(
+        (
+            "i do not have enough authorized grounded evidence",
+            "no authorized information was found",
+        )
+    )
+
+
+def _is_evaluable_claim(text: str) -> bool:
+    normalized = re.sub(r"^\d+[\).]\s*", "", text.strip()).strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower().rstrip(":")
+    if normalized.endswith("?"):
+        return False
+    if lowered in {
+        "based on the provided context",
+        "based on the available context",
+        "based on the available documents",
+        "based on the provided documents",
+        "answer",
+        "answers",
+        "possible reasons",
+    }:
+        return False
+    if lowered.startswith(
+        (
+            "based on the provided context",
+            "based on the available context",
+            "based on the available documents",
+            "based on the provided documents",
+            "here are the answers",
+            "i can answer the following",
+        )
+    ):
+        return False
+    return True

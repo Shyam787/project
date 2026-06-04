@@ -208,7 +208,7 @@ Prometheus collects platform metrics, including:
 - tenant isolation violation attempts
 - retrieval, reranking, and generation latency
 - hallucination score distribution
-- retrieval quality gauges
+- retrieval quality gauges by tenant, document set, and metric
 
 Grafana provides operational dashboards for request flow, latency, security events, and hallucination trends.
 
@@ -218,6 +218,13 @@ Prometheus alert rules include:
 - RBAC denial spike
 - tenant isolation violation attempt
 - hallucination score spike above threshold
+
+Chat answer generation is protected by a Redis-backed per-user rate limit. The default limit is 20 answer requests per user per hour and can be changed with:
+
+```text
+CHAT_RATE_LIMIT_REQUESTS=20
+CHAT_RATE_LIMIT_WINDOW_SECONDS=3600
+```
 
 ## Database Access
 
@@ -264,6 +271,8 @@ Docker Compose is the supported local runtime.
 Kubernetes manifests and Terraform files are included as cloud-readiness artifacts. They define the expected production shape: isolated namespaces, network policies, service boundaries, persistent infrastructure, and infrastructure-as-code ownership.
 
 These cloud artifacts are not automatically applied during local setup because running cloud Kubernetes clusters, managed databases, public load balancers, storage volumes, TLS, and monitoring infrastructure can create unnecessary cost. Apply them only when deploying to a funded cloud environment with production secrets, TLS, backups, and region-specific compliance controls configured.
+
+For DPDP-aware deployment, production data residency must be configured so PostgreSQL, Qdrant, Redis, Keycloak storage, document volumes, logs, and backups remain in approved Indian cloud regions. The local Docker runtime keeps data on the host machine; regional residency is a production deployment control rather than a local development behavior.
 
 ## Security Notes
 

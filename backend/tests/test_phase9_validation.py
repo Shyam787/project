@@ -5,6 +5,7 @@ import pytest
 
 from app.cache.redis_cache import tenant_cache_key
 from app.auth.models import IdentityContext
+from app.chat.service import _authorized_scope_fingerprint
 from app.evaluation.metrics import ndcg_at_k, precision_at_k, recall_at_k, reciprocal_rank
 from app.hallucination.scoring import verify_response
 from app.rbac.policies import Permission
@@ -119,6 +120,23 @@ def test_cache_validation_separates_tenant_and_rbac_context():
 
     assert tenant_a_key != tenant_b_key
     assert tenant_a_key != admin_key
+
+
+def test_query_cache_scope_changes_when_authorized_chunks_change():
+    active_scope = _authorized_scope_fingerprint(
+        [
+            ChunkRecord(
+                chunk_id="chunk-1",
+                document_id="doc-active",
+                tenant_id="tenant-a",
+                chunk_text="active content",
+                chunk_index=0,
+            )
+        ]
+    )
+    archived_scope = _authorized_scope_fingerprint([])
+
+    assert active_scope != archived_scope
 
 
 def test_retrieval_quality_metrics_are_computed():

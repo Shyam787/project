@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   BarChart3,
+  CheckCircle,
   ChevronRight,
   Download,
   Edit3,
@@ -88,6 +89,13 @@ type AuditEntry = {
   hallucination: ChatResult["hallucination"];
   retrieval: Record<string, number | string[]>;
 };
+
+function hallucinationRisk(score?: number) {
+  const value = Number(score ?? 0);
+  if (value <= 0.25) return { label: "low", tone: "success" as const };
+  if (value <= 0.5) return { label: "moderate", tone: "accent" as const };
+  return { label: "elevated", tone: "danger" as const };
+}
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const keycloakBase = process.env.NEXT_PUBLIC_KEYCLOAK_BASE_URL ?? "http://localhost:8081";
@@ -608,7 +616,7 @@ function Dashboard({ summary, claims }: { summary: { documents: number; chunks: 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric icon={<FileText />} label="Documents" value={summary.documents} />
           <Metric icon={<BarChart3 />} label="Indexed chunks" value={summary.chunks} />
-          <Metric icon={<LockKeyhole />} label="Role-restricted" value={summary.restricted} />
+          <Metric icon={<LockKeyhole />} label="Role-limited docs" value={summary.restricted} />
           <Metric icon={<Archive />} label="Archived" value={summary.archived} />
         </div>
       ) : (
@@ -790,6 +798,7 @@ function AnswerLoading() {
 
 function Answer({ chat, sendFeedback }: { chat: ChatResult; sendFeedback: (messageId: string | undefined, rating: "thumbs_up" | "thumbs_down") => Promise<boolean | void> }) {
   const [selectedFeedback, setSelectedFeedback] = useState<"thumbs_up" | "thumbs_down" | null>(null);
+  const risk = hallucinationRisk(chat.hallucination.score);
 
   useEffect(() => {
     setSelectedFeedback(null);
@@ -805,7 +814,8 @@ function Answer({ chat, sendFeedback }: { chat: ChatResult; sendFeedback: (messa
     <div className="space-y-4">
       <Card title="Grounded answer">
         <div className="mb-3 flex flex-wrap gap-2">
-          <Badge tone={chat.hallucination.score === 0 ? "success" : "danger"}>Grounding: {chat.hallucination.confidence}</Badge>
+          <Badge tone={risk.tone}>Hallucination risk: {risk.label}</Badge>
+          <Badge tone={chat.hallucination.confidence === "high" ? "success" : "accent"}>Grounding: {chat.hallucination.confidence}</Badge>
           <Badge tone="accent">Citations validated</Badge>
           <Badge tone={chat.cache_hit ? "neutral" : "success"}>{chat.cache_hit ? "Cached response" : "Fresh retrieval"}</Badge>
         </div>
@@ -885,7 +895,7 @@ function AuditLogView({ entries, reload, loading, downloadDocument, admin }: { e
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge tone={entry.hallucination?.score === 0 ? "success" : "danger"}>Hallucination risk {entry.hallucination?.score === 0 ? "low" : "elevated"}</Badge>
+                    <Badge tone={hallucinationRisk(entry.hallucination?.score).tone}>Hallucination risk {hallucinationRisk(entry.hallucination?.score).label}</Badge>
                     <Badge tone="accent">{entry.retrieved_chunks.length} chunks</Badge>
                     <Badge>{uniqueAuditSources(entry).length} source file(s)</Badge>
                   </div>
@@ -944,6 +954,24 @@ function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<UserRecord | null>(null);
   const [deleting, setDeleting] = useState<UserRecord | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const userStats = useMemo(() => ({
+    total: users.length,
+    active: users.filter((user) => user.is_active).length,
+    inactive: users.filter((user) => !user.is_active).length
+  }), [users]);
+  const filteredUsers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return users.filter((user) => {
+      const matchesSearch = !query || `${user.full_name} ${user.email} ${user.roles.join(" ")}`.toLowerCase().includes(query);
+      const matchesStatus =
+        statusFilter === "All" ||
+        (statusFilter === "Active" && user.is_active) ||
+        (statusFilter === "Inactive" && !user.is_active);
+      return matchesSearch && matchesStatus;
+    });
+  }, [search, statusFilter, users]);
 
   return (
     <div className="space-y-4">
@@ -955,13 +983,29 @@ function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, 
             <button className="inline-flex items-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white" onClick={() => setCreating(true)} type="button"><Plus className="h-4 w-4" /> Create user</button>
           </div>
         </div>
+        <div className="mb-3 grid gap-3 sm:grid-cols-3">
+          <Metric icon={<FileText />} label="Total users" value={userStats.total} />
+          <Metric icon={<CheckCircle />} label="Active users" value={userStats.active} />
+          <Metric icon={<LockKeyhole />} label="Inactive users" value={userStats.inactive} />
+        </div>
+        <div className="mb-4 grid gap-3 md:grid-cols-[1fr_220px]">
+          <label className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600">
+            <Search className="h-4 w-4 shrink-0" />
+            <input className="min-w-0 flex-1 outline-none" placeholder="Search users by name, email, or role" value={search} onChange={(event) => setSearch(event.target.value)} />
+          </label>
+          <select className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option>All</option>
+            <option>Active</option>
+            <option>Inactive</option>
+          </select>
+        </div>
         <div className="grid gap-3">
           {loading && (
             <div className="grid gap-3">
               {[0, 1, 2].map((item) => <div key={item} className="h-20 animate-pulse rounded-lg bg-slate-100" />)}
             </div>
           )}
-          {users.map((user) => (
+          {filteredUsers.map((user) => (
             <div className="rounded-lg border border-slate-200 p-3" key={user.user_id}>
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -976,7 +1020,8 @@ function UsersView({ users, tenant, createUser, updateUser, deleteUser, reload, 
               </div>
             </div>
           ))}
-          {!users.length && <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No users found for this organization.</div>}
+          {!loading && !users.length && <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No users found for this organization.</div>}
+          {!loading && users.length > 0 && !filteredUsers.length && <div className="rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No users match the current search or status filter.</div>}
         </div>
       </Card>
       {creating && <UserFormModal title="Create user" onClose={() => setCreating(false)} onSubmit={async (payload) => { if (await createUser(payload)) setCreating(false); }} />}

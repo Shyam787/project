@@ -28,6 +28,13 @@ async def chat_query(
         Depends(require_permission(Permission.DOCUMENT_READ)),
     ],
 ) -> dict:
+    await _enforce_chat_rate_limit(
+        cache_client=cache_client,
+        tenant_id=identity.tenant.tenant_id,
+        user_id=identity.user_id,
+        limit=request.app.state.settings.chat_rate_limit_requests,
+        window_seconds=request.app.state.settings.chat_rate_limit_window_seconds,
+    )
     payload = await answer_query(
         session=session,
         vector_store=vector_store,
@@ -42,6 +49,40 @@ async def chat_query(
         "metadata": {"request_id": getattr(request.state, "request_id", "unknown")},
         "error": None,
     }
+
+
+async def _enforce_chat_rate_limit(
+    *,
+    cache_client,
+    tenant_id: str,
+    user_id: str,
+    limit: int,
+    window_seconds: int,
+) -> None:
+    if limit <= 0 or window_seconds <= 0:
+        return
+    key = f"rate_limit:chat:{tenant_id}:{user_id}"
+    count = await cache_client.incr(key)
+    if count == 1:
+        await cache_client.expire(key, window_seconds)
+    if count > limit:
+        ttl = await cache_client.ttl(key)
+        retry_after = max(int(ttl), 1)
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "CHAT_RATE_LIMIT_EXCEEDED",
+                "message": (
+                    "Too many answer requests were submitted. "
+                    f"Please wait {retry_after} seconds before trying again."
+                ),
+                "details": {
+                    "limit": limit,
+                    "window_seconds": window_seconds,
+                    "retry_after_seconds": retry_after,
+                },
+            },
+        )
 
 
 @router.post("/feedback")

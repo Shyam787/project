@@ -1,0 +1,9 @@
+SYNYCS GROUP - ENGINEERING DEPLOYMENT STANDARD
+
+Production deployments require peer review, passing CI checks, and rollback documentation.
+
+Emergency production access expires after 24 hours.
+
+Deployment records must include change owner, service name, and approval reference.
+
+Document Classification: Internal

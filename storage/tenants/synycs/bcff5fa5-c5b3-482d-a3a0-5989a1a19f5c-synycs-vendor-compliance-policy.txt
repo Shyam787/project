@@ -1,9 +1,0 @@
-SYNYCS GROUP - VENDOR COMPLIANCE POLICY
-
-Vendors handling customer data must complete an annual security questionnaire.
-
-Vendor contracts must include confidentiality, breach notification, and data processing clauses.
-
-Restricted vendor exceptions require tenant administrator approval.
-
-Document Classification: Confidential

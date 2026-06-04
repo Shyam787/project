@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", repr=False)
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.1-8b-instant"
+    chat_rate_limit_requests: int = 20
+    chat_rate_limit_window_seconds: int = 3600
     embedding_model: str = "BAAI/bge-m3"
     embedding_batch_size: int = 64
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
